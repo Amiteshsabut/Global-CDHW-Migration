@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Global Compound Drought–Heatwave Migration Observatory" />
+  <title>Global CDHW Migration Observatory</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">CDHW</div>
+      <div>
+        <h1>Global Compound Drought–Heatwave Migration Observatory</h1>
+        <p>Observed migration trajectories and spatial change, 1982–2019</p>
+      </div>
+    </div>
+    <button id="resetView" class="top-button">Reset global view</button>
+  </header>
+
+  <main class="dashboard">
+    <aside class="sidebar">
+      <section class="panel">
+        <div class="section-heading">
+          <span>WHERE</span>
+          <small>Map extent</small>
+        </div>
+        <select id="regionSelect" class="select">
+          <option value="Global">Global</option>
+          <option value="North America">North America</option>
+          <option value="South America">South America</option>
+          <option value="Europe">Europe</option>
+          <option value="Africa">Africa</option>
+          <option value="Asia">Asia</option>
+          <option value="Oceania">Oceania</option>
+        </select>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <span>WHEN</span>
+          <small>Equal 19-year windows</small>
+        </div>
+        <div class="period-row">
+          <div class="period-card">
+            <b>EARLY</b>
+            <strong>1982–2000</strong>
+          </div>
+          <div class="arrow">→</div>
+          <div class="period-card">
+            <b>RECENT</b>
+            <strong>2001–2019</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <span>VIEW</span>
+          <small>Display mode</small>
+        </div>
+
+        <div class="view-tabs">
+          <button class="view-btn active" data-view="tracks">Tracks</button>
+          <button class="view-btn" data-view="density">Density</button>
+          <button class="view-btn" data-view="change">Change</button>
+        </div>
+
+        <div id="trackControls" class="controls-block">
+          <div class="slider-head">
+            <label for="trackOpacity">Track opacity</label>
+            <span id="trackOpacityValue">70%</span>
+          </div>
+          <input id="trackOpacity" type="range" min="15" max="100" value="70" />
+
+          <label class="check-row">
+            <input id="showTrackPoints" type="checkbox" />
+            <span>Show daily track points</span>
+          </label>
+        </div>
+
+        <div id="densityControls" class="controls-block hidden">
+          <div class="slider-head">
+            <label for="densityOpacity">Raster opacity</label>
+            <span id="densityOpacityValue">88%</span>
+          </div>
+          <input id="densityOpacity" type="range" min="20" max="100" value="88" />
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <span>SUMMARY</span>
+          <small>Events and change</small>
+        </div>
+        <div class="stats-grid">
+          <div class="stat">
+            <div class="stat-kicker">1982–2000</div>
+            <div id="earlyEvents" class="stat-value">—</div>
+            <div class="stat-label">unique events</div>
+          </div>
+          <div class="stat">
+            <div class="stat-kicker">2001–2019</div>
+            <div id="recentEvents" class="stat-value">—</div>
+            <div class="stat-label">unique events</div>
+          </div>
+          <div class="stat">
+            <div class="stat-kicker">Event change</div>
+            <div id="eventChange" class="stat-value">—</div>
+            <div class="stat-label">relative change</div>
+          </div>
+          <div class="stat">
+            <div class="stat-kicker">Raster-count change</div>
+            <div id="cellChange" class="stat-value">—</div>
+            <div class="stat-label">recent vs early</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <span>ANNUAL EVENTS</span>
+          <small>1982–2019</small>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="annualChart"></canvas>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <span>LAND-USE SUMMARY</span>
+          <small>Not mapped</small>
+        </div>
+        <p class="helper-text">
+          Cropland and pasture are used only to summarize migration-track burden over these land-use areas.
+        </p>
+        <div class="chart-wrap landuse-chart">
+          <canvas id="landuseChart"></canvas>
+        </div>
+        <div class="landuse-mini-grid">
+          <div>
+            <span>Recent cropland area with tracks</span>
+            <b id="cropOverlap">—</b>
+          </div>
+          <div>
+            <span>Recent pasture area with tracks</span>
+            <b id="pastureOverlap">—</b>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="map-column">
+      <div class="map-header">
+        <div>
+          <strong id="mapTitle">Migration trajectories</strong>
+          <span id="mapSubtitle">Drag the divider to compare 1982–2000 with 2001–2019.</span>
+        </div>
+        <span id="status" class="status">Loading…</span>
+      </div>
+
+      <div id="mapShell" class="map-shell">
+        <div id="mapLeft" class="map"></div>
+        <div id="mapRight" class="map map-right"></div>
+
+        <div id="labelLeft" class="period-label left">1982–2000</div>
+        <div id="labelRight" class="period-label right">2001–2019</div>
+
+        <div id="divider" class="divider">
+          <div class="divider-handle">↔</div>
+        </div>
+
+        <div id="yearLegend" class="legend year-legend">
+          <div class="legend-title">Track start year</div>
+          <div id="yearLegendItems"></div>
+        </div>
+
+        <div id="densityLegend" class="legend density-legend hidden">
+          <div class="legend-title" id="densityLegendTitle">Cumulative migration-track count</div>
+          <div id="densityRamp" class="density-ramp"></div>
+          <div class="legend-scale">
+            <span id="densityMin">0</span>
+            <span id="densityMax">—</span>
+          </div>
+        </div>
+
+        <div id="readout" class="readout">Move over map</div>
+      </div>
+
+      <div class="map-note">
+        <span id="mapNoteText">
+          Tracks are drawn directly from Daily_Summary_CDHW_Events.xlsx.
+        </span>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/georaster"></script>
+  <script src="https://unpkg.com/georaster-layer-for-leaflet"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="assets/app-v2.js?v=20260827-1"></script>
+</body>
+</html>
