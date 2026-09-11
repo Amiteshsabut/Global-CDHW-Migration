@@ -1,4 +1,4 @@
-name: Deploy GitHub Pages
+name: Build and Deploy CDHW Dashboard
 
 on:
   push:
@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build-and-deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -26,6 +26,25 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate dashboard data
+        run: |
+          python scripts/prepare_dashboard_data.py
+
+      - name: Verify generated data
+        run: |
+          echo "Generated dashboard files:"
+          ls -lh data/
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
