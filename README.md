@@ -1,1 +1,3 @@
+# Global Compound Drought–Heatwave Migration
+
 This repository hosts the Global Compound Drought–Heatwave Migration Observatory, an interactive dashboard for exploring the spatial patterns and temporal evolution of compound drought–heatwave (CDHW) migration worldwide during 1982–2019. The dashboard visualizes observed migration trajectories, cumulative migration-track density, and changes in migration activity between the early period (1982–2000) and recent period (2001–2019), providing an accessible platform for examining how large-scale compound climate extremes move across regions and how their migration characteristics have changed over time.
