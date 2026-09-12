@@ -45,6 +45,7 @@ OUTPUT_DIR = REPO_ROOT / "data"
 TRACKS_FILE = REPO_ROOT / "raw_data" / "events" / "tracks.geojson"
 MIGRATION_DIR = REPO_ROOT / "raw_data" / "migration"
 POPULATION_FILE = REPO_ROOT / "raw_data" / "population" / "gpw_v4_population_count_rev11_2000_1_deg.tif"
+BASEMAP_FILE = REPO_ROOT / "raw_data" / "basemap" / "World_Continents_Web.geojson"
 
 CORRIDOR_CANDIDATES = [
     REPO_ROOT / "raw_data" / "corridors" / "CDHW_5yr_variable_width_corridors_dashboard.geojson",
@@ -442,26 +443,46 @@ def prepare_exposure():
             "population_available": metrics["POP2000"]["n"] > 0, "metrics": metrics}
 
 
+
+def prepare_basemap():
+    if not BASEMAP_FILE.exists():
+        raise FileNotFoundError(
+            f"Missing clean Robinson basemap input: {BASEMAP_FILE}\n"
+            "Upload World_Continents_Web.geojson to raw_data/basemap/."
+        )
+    with BASEMAP_FILE.open("r", encoding="utf-8") as f:
+        gj = json.load(f)
+    if gj.get("type") != "FeatureCollection":
+        raise ValueError("World_Continents_Web.geojson must be a FeatureCollection")
+    with (OUTPUT_DIR / "world_continents.geojson").open("w", encoding="utf-8") as f:
+        json.dump(gj, f, separators=(",", ":"))
+    return {"available": True, "feature_count": len(gj.get("features", []))}
+
+
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    print("1/5 Preparing migration tracks...")
+    print("1/6 Preparing clean world basemap...")
+    basemap_summary = prepare_basemap()
+    print("2/6 Preparing migration tracks...")
     track_summary = prepare_tracks()
-    print("2/5 Preparing migration density rasters...")
+    print("3/6 Preparing migration density rasters...")
     density_summary = prepare_density()
-    print("3/5 Preparing five-year corridors...")
+    print("4/6 Preparing five-year corridors...")
     corridor_summary = prepare_corridors()
-    print("4/5 Preparing ADM1 exposure layer...")
+    print("5/6 Preparing ADM1 exposure layer...")
     exposure_summary = prepare_exposure()
-    print("5/5 Writing dashboard summary...")
+    print("6/6 Writing dashboard summary...")
 
     summary = {
         "periods": {"early": "1982-2000", "recent": "2001-2019", "full": "1982-2019"},
         "five_year_windows": [f"{a}-{b}" for a, b in FIVE_YEAR_WINDOWS],
+        "basemap": basemap_summary,
         "tracks": track_summary,
         "density": density_summary,
         "corridors": corridor_summary,
         "exposure": exposure_summary,
         "files": {
+            "world": "data/world_continents.geojson",
             "tracks": "data/tracks.geojson",
             "early_density": "data/density_1982_2000_display.tif",
             "recent_density": "data/density_2001_2019_display.tif",
