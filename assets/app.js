@@ -330,6 +330,44 @@ function lineCoordinates(geometry) {
   if (geometry.type === "Point") return [geometry.coordinates];
   return [];
 }
+
+const trackContinentCache = new Map();
+
+function trackContinent(feature) {
+  if (!feature || !state.world) return "—";
+
+  const key = feature.properties?.track_id || feature;
+  if (trackContinentCache.has(key)) return trackContinentCache.get(key);
+
+  const coords = lineCoordinates(feature.geometry)
+    .filter(xy => Array.isArray(xy) && xy.length >= 2 && numeric(xy[0]) && numeric(xy[1]));
+
+  const counts = new Map();
+  const continents = state.world.features || [];
+
+  for (const xy of coords) {
+    const hit = continents.find(f => {
+      try { return d3.geoContains(f, [Number(xy[0]), Number(xy[1])]); }
+      catch (_) { return false; }
+    });
+    const name = hit?.properties?.CONTINENT || hit?.properties?.continent || hit?.properties?.Continent;
+    if (name) counts.set(name, (counts.get(name) || 0) + 1);
+  }
+
+  let result = "—";
+  if (counts.size) {
+    result = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  } else {
+    try {
+      const c = d3.geoCentroid(feature);
+      const hit = continents.find(f => d3.geoContains(f, c));
+      result = hit?.properties?.CONTINENT || hit?.properties?.continent || hit?.properties?.Continent || "—";
+    } catch (_) {}
+  }
+
+  trackContinentCache.set(key, result);
+  return result;
+}
 function renderTracks() {
   clearDataLayers();
   const features = trackFeatures();
@@ -345,11 +383,12 @@ function renderTracks() {
     .on("mouseenter", function(event, d) {
       d3.select(this).attr("stroke-width", 4).attr("opacity", 1);
       const p = d.properties || {};
-      tooltipShow(`<b>${esc(p.track_id || "Track")}</b><br>${esc(p.start_year)} · ${esc((p.window || "").replace("-", "–"))}`, event);
+      const continent = trackContinent(d);
+      tooltipShow(`<b>${esc(continent)}</b><br>${esc(p.start_year)} · ${esc((p.window || "").replace("-", "–"))}`, event);
     })
     .on("mousemove", tooltipMove)
     .on("mouseleave", function() { d3.select(this).attr("stroke-width", 2.15).attr("opacity", state.trackOpacity); tooltipHide(); })
-    .on("click", (_, d) => showTrackProfile(d.properties || {}));
+    .on("click", (_, d) => showTrackProfile(d));
   if (state.showTrackPoints) {
     const pts = [];
     features.forEach(f => lineCoordinates(f.geometry).forEach(xy => pts.push({ xy, p: f.properties || {} })));
@@ -392,7 +431,9 @@ function showTrackOverview(features) {
   const counts = new Map();
   directions.forEach(d => counts.set(d, (counts.get(d) || 0) + 1));
   const dominant = [...counts.entries()].sort((a,b)=>b[1]-a[1])[0];
-  const longest = [...rows].sort((a,b)=>(num(b.properties?.path_length_km)||0)-(num(a.properties?.path_length_km)||0))[0]?.properties || {};
+  const longestFeature = [...rows].sort((a,b)=>(num(b.properties?.path_length_km)||0)-(num(a.properties?.path_length_km)||0))[0] || null;
+  const longest = longestFeature?.properties || {};
+  const longestContinent = longestFeature ? trackContinent(longestFeature) : "—";
   const label = state.trackWindow === "all" ? "GLOBAL TRACK OVERVIEW" : "WINDOW OVERVIEW";
   const title = state.trackWindow === "all" ? "Global migration statistics" : `Migration statistics — ${state.trackWindow.replace("-", "–")}`;
   setProfile(label, title, `
@@ -406,15 +447,17 @@ function showTrackOverview(features) {
       <div><span>Longest path</span><b>${numeric(longest.path_length_km) ? `${fmt(longest.path_length_km,0)} km` : "—"}</b></div>
     </div>
     <div class="profile-section"><h4>Interactive track inspection</h4>
-      <div class="profile-row"><span>Longest-track ID</span><b>${esc(longest.track_id || "—")}</b></div>
+      <div class="profile-row"><span>Longest-track continent</span><b>${esc(longestContinent)}</b></div>
       <div class="profile-row"><span>Time span</span><b>${years.length ? `${years[0]}–${years[years.length-1]}` : "—"}</b></div>
       <div class="profile-row"><span>Most common direction</span><b>${dominant ? `${esc(dominant[0])} (${fmt(dominant[1])} tracks)` : "—"}</b></div>
     </div>
     <p class="placeholder" style="margin-top:12px">Click any migration track on the map to replace this overview with its individual trajectory profile.</p>`);
 }
 
-function showTrackProfile(p) {
-  setProfile("TRACK PROFILE", p.track_id || "Migration track", `
+function showTrackProfile(feature) {
+  const p = feature?.properties || {};
+  const continent = trackContinent(feature);
+  setProfile("TRACK PROFILE", continent === "—" ? "Migration track" : continent, `
     <div class="profile-hero"><span>Start year</span><strong>${esc(p.start_year)}</strong><span class="class-badge">${esc((p.window || "").replace("-", "–"))}</span></div>
     <div class="profile-grid">
       <div><span>Path length</span><b>${fmt(p.path_length_km,0)} km</b></div>
@@ -422,7 +465,7 @@ function showTrackProfile(p) {
       <div><span>Direction</span><b>${esc(p.direction || "—")}</b></div>
       <div><span>Bearing</span><b>${numeric(p.mean_bearing_deg) ? `${fmt(p.mean_bearing_deg,1)}°` : "—"}</b></div>
       <div><span>Track positions</span><b>${fmt(p.n_positions)}</b></div>
-      <div><span>Track ID</span><b>${esc(p.track_id || "—")}</b></div>
+      <div><span>Continent</span><b>${esc(continent)}</b></div>
     </div>`);
 }
 
