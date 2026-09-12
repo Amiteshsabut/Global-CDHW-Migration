@@ -5,8 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Global Compound Drought–Heatwave Migration Observatory" />
   <title>Global CDHW Migration Observatory</title>
-  <link rel="preconnect" href="https://unpkg.com" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
@@ -123,7 +121,15 @@
           </div>
           <div id="legend" class="legend"></div>
         </div>
-        <div id="map"></div>
+        <div id="map" class="robinson-map">
+          <svg id="mapSvg" role="img" aria-label="Global CDHW migration map"></svg>
+          <div class="map-zoom-tools" aria-label="Map zoom controls">
+            <button id="zoomIn" type="button" title="Zoom in">+</button>
+            <button id="zoomOut" type="button" title="Zoom out">−</button>
+            <button id="zoomHome" type="button" title="Reset map">⌂</button>
+          </div>
+          <div id="mapTooltip" class="map-tooltip hidden"></div>
+        </div>
         <div id="status" class="status-pill">Loading data…</div>
       </section>
 
@@ -145,10 +151,10 @@
     </main>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3-geo-projection@4"></script>
   <script src="https://unpkg.com/georaster"></script>
-  <script src="https://unpkg.com/georaster-layer-for-leaflet"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-  <script src="assets/app.js?v=20260912-1"></script>
+  <script src="assets/app.js?v=20260912-robinson-prevstyle"></script>
 </body>
 </html>
