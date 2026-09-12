@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Global Compound Drought–Heatwave Migration Observatory" />
   <title>Global CDHW Migration Observatory</title>
+  <link rel="preconnect" href="https://unpkg.com" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
@@ -35,45 +37,38 @@
         </select>
       </label>
 
-      <div id="trackControls" class="tab-controls compare-controls">
-        <div class="control-group compare-slider">
-          <div class="slider-label-row"><span class="control-label">Window A</span><strong id="trackWindowALabel">1982–1986</strong></div>
-          <input id="trackWindowA" type="range" min="0" max="7" step="1" value="0" />
-          <div class="range-endpoints"><span>1982</span><span>2019</span></div>
-        </div>
-        <div class="compare-arrow">↔</div>
-        <div class="control-group compare-slider">
-          <div class="slider-label-row"><span class="control-label">Window B</span><strong id="trackWindowBLabel">2017–2019</strong></div>
-          <input id="trackWindowB" type="range" min="0" max="7" step="1" value="7" />
-          <div class="range-endpoints"><span>1982</span><span>2019</span></div>
-        </div>
-        <label class="control-group compact-control">
-          <span class="control-label">Track opacity <strong id="trackOpacityValue">82%</strong></span>
-          <input id="trackOpacity" type="range" min="30" max="100" value="82" />
+      <div id="trackControls" class="tab-controls">
+        <label class="control-group">
+          <span class="control-label">5-year window</span>
+          <select id="trackWindow"><option value="all">All years, 1982–2019</option></select>
+        </label>
+        <label class="control-group opacity-control">
+          <span class="control-label">Track opacity <strong id="trackOpacityValue">70%</strong></span>
+          <input id="trackOpacity" type="range" min="20" max="100" value="70" />
         </label>
         <label class="toggle-row"><input id="showTrackPoints" type="checkbox" /><span>Show track positions</span></label>
       </div>
 
       <div id="densityControls" class="tab-controls hidden">
         <div class="control-group wide-control">
-          <span class="control-label">Density view</span>
+          <span class="control-label">Density period</span>
           <div class="segmented" id="densityMode">
-            <button class="active" data-density="compare">Compare periods</button>
-            <button data-density="change">Recent − early</button>
+            <button data-density="early">1982–2000</button>
+            <button class="active" data-density="recent">2001–2019</button>
+            <button data-density="change">Change</button>
           </div>
         </div>
-        <label class="control-group compact-control">
+        <label class="control-group opacity-control">
           <span class="control-label">Raster opacity <strong id="densityOpacityValue">88%</strong></span>
-          <input id="densityOpacity" type="range" min="25" max="100" value="88" />
+          <input id="densityOpacity" type="range" min="20" max="100" value="88" />
         </label>
       </div>
 
       <div id="corridorControls" class="tab-controls hidden">
-        <div class="control-group corridor-slider">
-          <div class="slider-label-row"><span class="control-label">Five-year corridor window</span><strong id="corridorWindowLabel">1982–1986</strong></div>
-          <input id="corridorWindow" type="range" min="0" max="7" step="1" value="0" />
-          <div class="window-ticks" id="corridorTicks"></div>
-        </div>
+        <label class="control-group">
+          <span class="control-label">5-year corridor window</span>
+          <select id="corridorWindow"></select>
+        </label>
         <button id="animateCorridors" class="action-button">▶ Animate windows</button>
         <div class="containment-key" aria-label="Corridor containment levels">
           <span><i class="level90"></i>90%</span><span><i class="level50"></i>50%</span><span><i class="level20"></i>20%</span>
@@ -113,32 +108,23 @@
     </section>
 
     <section class="top-kpis" id="kpiRow">
-      <article class="top-kpi"><span id="kpi1Label">Window A tracks</span><strong id="kpi1Value">—</strong><small id="kpi1Note">1982–1986</small></article>
-      <article class="top-kpi"><span id="kpi2Label">Window B tracks</span><strong id="kpi2Value">—</strong><small id="kpi2Note">2017–2019</small></article>
-      <article class="top-kpi"><span id="kpi3Label">Track difference</span><strong id="kpi3Value">—</strong><small id="kpi3Note">B minus A</small></article>
-      <article class="top-kpi"><span id="kpi4Label">Median path length</span><strong id="kpi4Value">—</strong><small id="kpi4Note">selected windows</small></article>
+      <article class="top-kpi"><span id="kpi1Label">Total tracks</span><strong id="kpi1Value">—</strong><small id="kpi1Note">1982–2019</small></article>
+      <article class="top-kpi"><span id="kpi2Label">Early period</span><strong id="kpi2Value">—</strong><small id="kpi2Note">1982–2000</small></article>
+      <article class="top-kpi"><span id="kpi3Label">Recent period</span><strong id="kpi3Value">—</strong><small id="kpi3Note">2001–2019</small></article>
+      <article class="top-kpi"><span id="kpi4Label">Recent share</span><strong id="kpi4Value">—</strong><small id="kpi4Note">of all tracks</small></article>
     </section>
 
     <main class="workspace">
       <section class="map-card card">
         <div class="map-heading">
           <div>
-            <span class="eyebrow" id="mapEyebrow">FIVE-YEAR COMPARISON</span>
-            <h2 id="mapTitle">CDHW Migration Tracks — 1982–1986 vs 2017–2019</h2>
+            <span class="eyebrow" id="mapEyebrow">GLOBAL MIGRATION</span>
+            <h2 id="mapTitle">Observed CDHW Migration Tracks</h2>
           </div>
           <div id="legend" class="legend"></div>
         </div>
-
-        <div id="map" class="map-shell" aria-label="Interactive Robinson projection map">
-          <svg id="mapSvg" role="img" aria-label="Global Robinson projection"></svg>
-          <div class="map-tools" aria-label="Map controls">
-            <button id="zoomIn" title="Zoom in">+</button>
-            <button id="zoomOut" title="Zoom out">−</button>
-            <button id="zoomHome" title="Reset map">⌂</button>
-          </div>
-          <div id="mapTooltip" class="map-tooltip hidden"></div>
-          <div id="status" class="status-pill">Loading data…</div>
-        </div>
+        <div id="map"></div>
+        <div id="status" class="status-pill">Loading data…</div>
       </section>
 
       <aside class="profile-column">
@@ -146,7 +132,7 @@
           <span class="eyebrow" id="profileEyebrow">TRACK PROFILE</span>
           <h2 id="profileTitle">Select a migration track</h2>
           <div id="profileBody" class="profile-body">
-            <p class="placeholder">Click a migration track to inspect its characteristics.</p>
+            <p class="placeholder">Click a track on the map to inspect its migration characteristics.</p>
           </div>
         </section>
 
@@ -159,10 +145,10 @@
     </main>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/d3-geo-projection@4/dist/d3-geo-projection.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/georaster"></script>
+  <script src="https://unpkg.com/georaster-layer-for-leaflet"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-  <script src="assets/app.js?v=20260912-robinson-1"></script>
+  <script src="assets/app.js?v=20260912-1"></script>
 </body>
 </html>
