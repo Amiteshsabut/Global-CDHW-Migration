@@ -44,7 +44,19 @@ jobs:
       - name: Verify generated data
         run: |
           echo "Generated dashboard files:"
-          ls -lh data/
+          find data -maxdepth 2 -type f -print
+          du -sh data
+
+      - name: Stage website
+        run: |
+          mkdir -p site
+          cp index.html site/
+          cp -r assets site/
+          cp -r data site/
+          touch site/.nojekyll
+
+          echo "Files being published:"
+          find site -maxdepth 3 -type f -print
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -52,7 +64,7 @@ jobs:
       - name: Upload website
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: site
 
       - name: Deploy to GitHub Pages
         id: deployment
