@@ -423,6 +423,12 @@ def prepare_exposure():
     try:
         for ft in gj.get("features", []):
             props0 = ft.get("properties") or {}
+            # Antarctica can be encoded as a dateline-spanning polygon that D3
+            # interprets as the spherical complement in Robinson projection.
+            # It has no meaningful exposure context for this dashboard, so omit
+            # it to prevent the giant globe-filling polygon seen in the browser.
+            if str(props0.get("shapeGroup") or "").upper() == "ATA" or str(props0.get("shapeName") or "").strip().lower() == "antarctica":
+                continue
             props = {k: props0.get(k) for k in keep if k in props0}
             source_geom = ft.get("geometry")
             if pop_src is not None and props.get("POP2000") is None:

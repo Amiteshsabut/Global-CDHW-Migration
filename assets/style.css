@@ -41,7 +41,7 @@ button { cursor: pointer; }
   box-shadow: var(--shadow);
 }
 
-/* Header: deliberately light, with no black banner or subtitle. */
+/* Strong black masthead with a single white scientific title. */
 .masthead {
   min-height: 86px;
   display: grid;
@@ -50,8 +50,8 @@ button { cursor: pointer; }
   gap: 28px;
   margin: 0 -18px;
   padding: 12px 18px;
-  border-bottom: 1px solid var(--line-dark);
-  background: #fffef9;
+  border-bottom: 3px solid var(--forest);
+  background: #090c0a;
 }
 .title-lockup h1 {
   margin: 0;
@@ -59,7 +59,7 @@ button { cursor: pointer; }
   font-size: clamp(25px, 1.75vw, 35px);
   line-height: 1.08;
   letter-spacing: -.025em;
-  color: #111914;
+  color: #ffffff;
 }
 .tab-nav {
   display: grid;
@@ -298,6 +298,7 @@ input[type="range"] { width: 100%; accent-color: var(--forest); }
 .track-point { pointer-events: none; }
 .corridor-path,
 .exposure-region { cursor: pointer; }
+.exposure-region { shape-rendering: geometricPrecision; }
 .raster-image {
   pointer-events: none;
   image-rendering: auto;

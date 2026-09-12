@@ -347,7 +347,7 @@ function renderTracks() {
   }
   renderTrackLegend();
   updateTrackKpis();
-  setProfile("TRACK PROFILE", "Select a migration track", `<p class="placeholder">Click a track to inspect its start year, five-year window, path length, net displacement, direction, bearing, and number of track positions.</p>`);
+  showTrackOverview(features);
   drawAnnualChart();
   setStatus(`${fmt(features.length)} tracks displayed`);
 }
@@ -365,6 +365,38 @@ function updateTrackKpis() {
     { label: "Median path length", value: `${fmt(median(lens), 0)} km`, note: current },
   ]);
 }
+
+function showTrackOverview(features) {
+  const rows = features || [];
+  const lengths = rows.map(f => num(f.properties?.path_length_km)).filter(numeric);
+  const displacements = rows.map(f => num(f.properties?.net_displacement_km)).filter(numeric);
+  const positions = rows.map(f => num(f.properties?.n_positions)).filter(numeric);
+  const years = [...new Set(rows.map(f => Number(f.properties?.start_year)).filter(Number.isFinite))].sort((a,b)=>a-b);
+  const directions = rows.map(f => f.properties?.direction).filter(Boolean);
+  const counts = new Map();
+  directions.forEach(d => counts.set(d, (counts.get(d) || 0) + 1));
+  const dominant = [...counts.entries()].sort((a,b)=>b[1]-a[1])[0];
+  const longest = [...rows].sort((a,b)=>(num(b.properties?.path_length_km)||0)-(num(a.properties?.path_length_km)||0))[0]?.properties || {};
+  const label = state.trackWindow === "all" ? "GLOBAL TRACK OVERVIEW" : "WINDOW OVERVIEW";
+  const title = state.trackWindow === "all" ? "Global migration statistics" : `Migration statistics — ${state.trackWindow.replace("-", "–")}`;
+  setProfile(label, title, `
+    <div class="profile-hero"><span>Tracks displayed</span><strong>${fmt(rows.length)}</strong><span class="class-badge">${state.trackWindow === "all" ? "1982–2019" : esc(state.trackWindow.replace("-", "–"))}</span></div>
+    <div class="profile-grid">
+      <div><span>Median path length</span><b>${fmt(median(lengths),0)} km</b></div>
+      <div><span>Median displacement</span><b>${fmt(median(displacements),0)} km</b></div>
+      <div><span>Median positions</span><b>${fmt(median(positions),0)}</b></div>
+      <div><span>Start years represented</span><b>${fmt(years.length)}</b></div>
+      <div><span>Dominant direction</span><b>${esc(dominant?.[0] || "—")}</b></div>
+      <div><span>Longest path</span><b>${numeric(longest.path_length_km) ? `${fmt(longest.path_length_km,0)} km` : "—"}</b></div>
+    </div>
+    <div class="profile-section"><h4>Interactive track inspection</h4>
+      <div class="profile-row"><span>Longest-track ID</span><b>${esc(longest.track_id || "—")}</b></div>
+      <div class="profile-row"><span>Time span</span><b>${years.length ? `${years[0]}–${years[years.length-1]}` : "—"}</b></div>
+      <div class="profile-row"><span>Most common direction</span><b>${dominant ? `${esc(dominant[0])} (${fmt(dominant[1])} tracks)` : "—"}</b></div>
+    </div>
+    <p class="placeholder" style="margin-top:12px">Click any migration track on the map to replace this overview with its individual trajectory profile.</p>`);
+}
+
 function showTrackProfile(p) {
   setProfile("TRACK PROFILE", p.track_id || "Migration track", `
     <div class="profile-hero"><span>Start year</span><strong>${esc(p.start_year)}</strong><span class="class-badge">${esc((p.window || "").replace("-", "–"))}</span></div>
@@ -556,7 +588,7 @@ function exposureBreaks() { const vals = exposureFeatures().map(f => metricValue
 function migrationBreaks() { let vals = exposureFeatures().map(f => migrationValue(f.properties || {})).filter(numeric); const pos = vals.filter(v => v > 0); if (pos.length >= 3) vals = pos; return [quantile(vals, 1/3), quantile(vals, 2/3)]; }
 function bivarIndex(migration, exposure, mb, eb) { const x = tertile(migration, mb[0], mb[1]), y = tertile(exposure, eb[0], eb[1]); return x === null || y === null ? null : y * 3 + x; }
 function exposureFill(p, eb, mb, singleRange) {
-  const v = metricValue(p); if (!numeric(v)) return "#efeee8";
+  const v = metricValue(p); if (!numeric(v)) return "#f4f2ea";
   if (state.exposureMode === "joint") { const idx = bivarIndex(migrationValue(p), v, mb, eb); return idx === null ? "#efeee8" : BIVAR_COLORS[idx]; }
   const lo = singleRange?.[0] ?? v, hi = singleRange?.[1] ?? v;
   return palette(SINGLE_COLORS, (v - lo) / Math.max(hi - lo, 1e-12));
@@ -573,12 +605,12 @@ function renderExposure() {
     .attr("class", "exposure-region")
     .attr("d", state.path)
     .attr("fill", d => exposureFill(d.properties || {}, eb, mb, singleRange))
-    .attr("fill-opacity", .9)
-    .attr("stroke", "#8f978f")
-    .attr("stroke-width", .5)
+    .attr("fill-opacity", .97)
+    .attr("stroke", "#737b74")
+    .attr("stroke-width", .62)
     .on("mouseenter", function(event, d) { d3.select(this).attr("stroke", "#1f2b23").attr("stroke-width", 1.5); const p = d.properties || {}; tooltipShow(`<b>${esc(p.shapeName || "ADM1")}</b><br>${esc(def.title)}: ${esc(def.format(metricValue(p)))}`, event); })
     .on("mousemove", tooltipMove)
-    .on("mouseleave", function() { d3.select(this).attr("stroke", "#8f978f").attr("stroke-width", .5); tooltipHide(); })
+    .on("mouseleave", function() { d3.select(this).attr("stroke", "#737b74").attr("stroke-width", .62); tooltipHide(); })
     .on("click", (_, d) => showExposureProfile(d.properties || {}, eb, mb));
   renderExposureLegend(def); updateExposureKpis(def, eb, mb); drawExposureChart(def, mb);
   setProfile("REGIONAL PROFILE", "Select an ADM1 region", `<p class="placeholder">Click a first-order administrative region to inspect migration burden together with cropland, pasture, population, GDP, and critical-infrastructure exposure.</p>`);
