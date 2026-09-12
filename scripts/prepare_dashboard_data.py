@@ -1,5 +1,6 @@
 """
-Prepare data for the revised Global CDHW Migration Observatory.
+Prepare data for the Global Compound Drought–Heatwave (CDHW)
+Migration Observatory.
 
 Required raw files
 ------------------
@@ -7,19 +8,23 @@ raw_data/migration/
     Migration_TrackCount_1982.tif ... Migration_TrackCount_2019.tif
 
 raw_data/events/
-    Daily_Summary_CDHW_Events.xlsx
+    tracks.geojson
 
 raw_data/landuse/
     Cropland2000_5m.tif
     Pasture2000_5m.tif
 
-Scientific handling
--------------------
-- Event trajectories come directly from Daily_Summary_CDHW_Events.xlsx.
-- 1982–2000 and 2001–2019 raster statistics use the ORIGINAL annual raster grid.
+Notes
+-----
+- Migration trajectories and event start years are read directly from
+  raw_data/events/tracks.geojson.
+- Daily_Summary_CDHW_Events.xlsx is NOT required by this script because the
+  current Excel file does not contain a Date column.
+- 1982–2000 and 2001–2019 raster statistics use the ORIGINAL annual raster
+  grid.
 - Bilinear interpolation is used ONLY to make smoother web-display rasters.
-- Cropland and pasture are NOT plotted as map overlays.
-- Cropland/pasture are regridded to the native migration grid only for summary statistics.
+- Cropland and pasture are NOT plotted as map overlays. They are regridded
+  to the native migration grid only for summary statistics.
 - Population is not used.
 """
 
@@ -37,10 +42,14 @@ from rasterio.transform import from_origin
 from rasterio.warp import reproject
 
 
+# =============================================================================
+# PATHS
+# =============================================================================
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 MIGRATION_DIR = REPO_ROOT / "raw_data" / "migration"
-EVENT_FILE = REPO_ROOT / "raw_data" / "events" / "Daily_Summary_CDHW_Events.xlsx"
+TRACKS_FILE = REPO_ROOT / "raw_data" / "events" / "tracks.geojson"
 
 LANDUSE_DIR = REPO_ROOT / "raw_data" / "landuse"
 CROPLAND_TIF = LANDUSE_DIR / "Cropland2000_5m.tif"
@@ -65,132 +74,112 @@ CHANGE_COLOR_ABS_MAX = None
 NODATA = -9999.0
 
 
-def find_column(df, candidates):
-    lookup = {str(c).strip().lower(): c for c in df.columns}
-    for candidate in candidates:
-        key = candidate.lower()
-        if key in lookup:
-            return lookup[key]
-    raise KeyError(
-        f"Could not find any of {candidates}. "
-        f"Available columns: {list(df.columns)}"
-    )
+# =============================================================================
+# TRACKS / EVENT SUMMARY
+# =============================================================================
 
+def load_tracks_geojson():
+    """
+    Load already-prepared migration trajectories from tracks.geojson.
 
-def load_events():
-    if not EVENT_FILE.exists():
+    The current tracks.geojson contains one feature per migration event and
+    each feature has a `start_year` property. The complete FeatureCollection
+    is copied to data/tracks.geojson for use by the web dashboard.
+    """
+
+    if not TRACKS_FILE.exists():
         raise FileNotFoundError(
-            f"Missing:\n{EVENT_FILE}\n\n"
-            "Create raw_data/events and upload Daily_Summary_CDHW_Events.xlsx."
+            f"Missing:\n{TRACKS_FILE}\n\n"
+            "Upload tracks.geojson to raw_data/events/."
         )
 
-    df = pd.read_excel(EVENT_FILE)
+    with TRACKS_FILE.open("r", encoding="utf-8") as f:
+        geojson = json.load(f)
 
-    c_date = find_column(df, ["Date", "date"])
-    c_event = find_column(df, ["Event ID", "Event_ID", "EventID", "event_id"])
-    c_lon = find_column(df, ["Longitude", "longitude", "Lon", "lon"])
-    c_lat = find_column(df, ["Latitude", "latitude", "Lat", "lat"])
+    if geojson.get("type") != "FeatureCollection":
+        raise ValueError(
+            "tracks.geojson must be a GeoJSON FeatureCollection."
+        )
 
-    out = df[[c_date, c_event, c_lon, c_lat]].copy()
-    out.columns = ["date", "event_id", "lon", "lat"]
+    features = geojson.get("features", [])
 
-    out["date"] = pd.to_datetime(out["date"], errors="coerce")
-    out["lon"] = pd.to_numeric(out["lon"], errors="coerce")
-    out["lat"] = pd.to_numeric(out["lat"], errors="coerce")
+    if not features:
+        raise ValueError("tracks.geojson contains no features.")
 
-    out = out.dropna(subset=["date", "event_id", "lon", "lat"])
-    out["lon"] = ((out["lon"] + 180.0) % 360.0) - 180.0
-    out = out[(out["lat"] >= -90.0) & (out["lat"] <= 90.0)]
-    out["year"] = out["date"].dt.year
+    years = []
 
-    return out
+    for i, feature in enumerate(features):
+        props = feature.get("properties") or {}
 
+        if "start_year" not in props:
+            raise KeyError(
+                f"Feature {i} does not contain 'start_year' in properties."
+            )
 
-def split_dateline(coords):
-    if len(coords) <= 1:
-        return [coords]
+        try:
+            year = int(props["start_year"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid start_year in feature {i}: {props.get('start_year')!r}"
+            ) from exc
 
-    parts = [[coords[0]]]
+        if year < 1982 or year > 2019:
+            raise ValueError(
+                f"start_year {year} in feature {i} is outside 1982–2019."
+            )
 
-    for prev, cur in zip(coords[:-1], coords[1:]):
-        if abs(cur[0] - prev[0]) > 180:
-            parts.append([cur])
-        else:
-            parts[-1].append(cur)
+        geometry = feature.get("geometry")
+        if not geometry or geometry.get("type") not in {
+            "Point",
+            "LineString",
+            "MultiLineString",
+        }:
+            raise ValueError(
+                f"Feature {i} has unsupported or missing geometry: "
+                f"{None if not geometry else geometry.get('type')}"
+            )
 
-    return [part for part in parts if part]
+        years.append(year)
 
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-def build_tracks_geojson(events):
-    features = []
-
-    for event_id, g in events.groupby("event_id", sort=False):
-        g = g.sort_values("date")
-
-        start_year = int(g["date"].iloc[0].year)
-        end_year = int(g["date"].iloc[-1].year)
-
-        coords = list(zip(g["lon"].astype(float), g["lat"].astype(float)))
-
-        for segment_index, part in enumerate(split_dateline(coords)):
-            if len(part) == 1:
-                geometry = {
-                    "type": "Point",
-                    "coordinates": [float(part[0][0]), float(part[0][1])],
-                }
-            else:
-                geometry = {
-                    "type": "LineString",
-                    "coordinates": [
-                        [float(x), float(y)] for x, y in part
-                    ],
-                }
-
-            features.append({
-                "type": "Feature",
-                "properties": {
-                    "event_id": str(event_id),
-                    "segment": segment_index,
-                    "start_year": start_year,
-                    "end_year": end_year,
-                    "start_date": g["date"].iloc[0].strftime("%Y-%m-%d"),
-                    "end_date": g["date"].iloc[-1].strftime("%Y-%m-%d"),
-                },
-                "geometry": geometry,
-            })
-
-    geojson = {
-        "type": "FeatureCollection",
-        "features": features,
-    }
-
+    # Copy the exact migration trajectories to the generated dashboard data.
     with (OUTPUT_DIR / "tracks.geojson").open("w", encoding="utf-8") as f:
-        json.dump(geojson, f)
-
-    starts = (
-        events.sort_values("date")
-        .groupby("event_id", as_index=False)
-        .first()[["event_id", "date"]]
-    )
-    starts["year"] = starts["date"].dt.year
+        json.dump(geojson, f, separators=(",", ":"))
 
     annual = [
         {
-            "year": year,
-            "events": int((starts["year"] == year).sum()),
+            "year": int(year),
+            "events": int(sum(y == year for y in years)),
         }
         for year in ALL_YEARS
     ]
 
+    early_count = int(sum(1982 <= y <= 2000 for y in years))
+    recent_count = int(sum(2001 <= y <= 2019 for y in years))
+
+    print(f"Loaded {len(features)} migration tracks.")
+    print(f"Early events (1982-2000): {early_count}")
+    print(f"Recent events (2001-2019): {recent_count}")
+
     return {
-        "early_count": int(starts["year"].between(1982, 2000).sum()),
-        "recent_count": int(starts["year"].between(2001, 2019).sum()),
+        "early_count": early_count,
+        "recent_count": recent_count,
         "annual": annual,
     }
 
 
+# =============================================================================
+# MIGRATION RASTERS
+# =============================================================================
+
 def find_migration_files():
     files = {}
+
+    if not MIGRATION_DIR.exists():
+        raise FileNotFoundError(
+            f"Missing migration directory:\n{MIGRATION_DIR}"
+        )
 
     for p in MIGRATION_DIR.glob("Migration_TrackCount_*.tif"):
         m = re.search(r"(\d{4})$", p.stem)
@@ -302,6 +291,10 @@ def build_period_rasters(files):
     }
 
 
+# =============================================================================
+# WEB DISPLAY RASTERS
+# =============================================================================
+
 def display_grid():
     width = int(round(360.0 / DISPLAY_RES_DEG))
     height = int(round(180.0 / DISPLAY_RES_DEG))
@@ -315,6 +308,12 @@ def display_grid():
 
 
 def reproject_for_display(src_array, src_transform, src_crs):
+    if src_crs is None:
+        raise ValueError(
+            "Migration rasters have no CRS. Assign the correct CRS to the "
+            "source rasters before generating the dashboard."
+        )
+
     dst_transform, width, height = display_grid()
 
     dst = np.full(
@@ -373,9 +372,16 @@ def write_display_tif(path, array, transform):
         dst.write(arr, 1)
 
 
+# =============================================================================
+# LAND-USE SUMMARY
+# =============================================================================
+
 def regrid_landuse_to_native(path, dst_shape, dst_transform, dst_crs):
     if not path.exists():
         raise FileNotFoundError(f"Missing land-use file:\n{path}")
+
+    if dst_crs is None:
+        raise ValueError("Native migration grid has no CRS.")
 
     dst = np.full(
         dst_shape,
@@ -384,6 +390,9 @@ def regrid_landuse_to_native(path, dst_shape, dst_transform, dst_crs):
     )
 
     with rasterio.open(path) as src:
+        if src.crs is None:
+            raise ValueError(f"Land-use raster has no CRS: {path}")
+
         reproject(
             source=rasterio.band(src, 1),
             destination=dst,
@@ -460,12 +469,15 @@ def robust_limits(early, recent, change):
     return max(density_max, 1e-9), max(change_max, 1e-9)
 
 
+# =============================================================================
+# MAIN
+# =============================================================================
+
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    print("1/5 Reading Daily_Summary_CDHW_Events.xlsx...")
-    events = load_events()
-    event_summary = build_tracks_geojson(events)
+    print("1/5 Reading migration trajectories from tracks.geojson...")
+    event_summary = load_tracks_geojson()
 
     print("2/5 Building native 1982-2000 and 2001-2019 migration rasters...")
     files = find_migration_files()
