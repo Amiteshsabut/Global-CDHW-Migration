@@ -280,9 +280,23 @@ function showControls(tab) {
   if (target) $(target).classList.remove("hidden");
 }
 function clearDataLayers() { state.dataZoom.selectAll("*").remove(); tooltipHide(); }
+function setMapBackdropForTab() {
+  const exposureOnly = state.tab === "exposure";
+  // Exposure is a thematic ADM1 map, not a physical basemap. Keep a clean
+  // white Robinson sphere and remove continents/graticules so the exposure
+  // polygons are the only geography competing for attention.
+  state.baseZoom.select(".map-sphere")
+    .attr("fill", exposureOnly ? "#ffffff" : "#e4ecee")
+    .attr("stroke", exposureOnly ? "#2f3a34" : "#a8b3af")
+    .attr("stroke-width", exposureOnly ? 1.05 : .8);
+  state.baseZoom.select(".graticule").style("display", exposureOnly ? "none" : null);
+  state.baseZoom.selectAll(".continent").style("display", exposureOnly ? "none" : null);
+}
+
 function render() {
   if (!state.summary || !state.path) return;
   showControls(state.tab);
+  setMapBackdropForTab();
   if (state.tab === "tracks") renderTracks();
   if (state.tab === "density") renderDensity();
   if (state.tab === "corridors") renderCorridors();
@@ -643,7 +657,21 @@ function stopCorridorAnimation() {
   if ($("animateCorridors")) { $("animateCorridors").classList.remove("playing"); $("animateCorridors").textContent = "▶ Animate windows"; }
 }
 
-function exposureFeatures() { return state.exposure?.features || []; }
+function exposureFeatures() {
+  const feats = state.exposure?.features || [];
+  // A malformed/reversed spherical polygon can be interpreted by d3-geo as
+  // "the whole globe except this region". Such a feature paints the entire
+  // Robinson sphere with one exposure color. ADM1 units are far smaller than
+  // a hemisphere, so reject only impossible spherical areas.
+  return feats.filter(f => {
+    try {
+      const a = d3.geoArea(f);
+      return Number.isFinite(a) && a >= 0 && a < 0.5;
+    } catch (_) {
+      return false;
+    }
+  });
+}
 function metricValue(p) { return num(p?.[state.exposureMetric]); }
 function migrationValue(p) { return num(p?.[state.migrationField]); }
 function transformedMetric(v) { return METRICS[state.exposureMetric].transform(v); }
