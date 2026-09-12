@@ -22,7 +22,7 @@ const METRICS = {
   CROPLAND: { title: "Cropland", transform: v => v * 100, format: v => numeric(v) ? `${fmt(v * 100, 1)}%` : "—" },
   PASTURE: { title: "Pasture", transform: v => v * 100, format: v => numeric(v) ? `${fmt(v * 100, 1)}%` : "—" },
   POP2000: { title: "Population (2000)", transform: v => v, format: v => compact(v) },
-  GDP: { title: "GDP (2017 international $, PPP)", transform: v => v, format: v => currencyCompact(v) },
+  GDP: { title: "GDP (2017 international $, PPP)", transform: v => numeric(v) && Number(v) > 0 ? Math.log10(Number(v)) : null, format: v => currencyCompact(v) },
   CISI_NORM: { title: "Critical Infrastructure Exposure Index", transform: v => v, format: v => fmt(v, 2) },
 };
 const MIGRATION_FIELDS = {
@@ -78,6 +78,8 @@ const compact = v => {
   return fmt(n, 0);
 };
 const currencyCompact = v => numeric(v) ? `$${compact(v)}` : "—";
+const superscript = n => String(n).replace(/-/g, "⁻").replace(/0/g,"⁰").replace(/1/g,"¹").replace(/2/g,"²").replace(/3/g,"³").replace(/4/g,"⁴").replace(/5/g,"⁵").replace(/6/g,"⁶").replace(/7/g,"⁷").replace(/8/g,"⁸").replace(/9/g,"⁹");
+const powerLabel = e => `10${superscript(e)}`;
 const esc = v => String(v ?? "").replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[c]);
 const pct = v => numeric(v) ? `${fmt(Number(v) * 100, 1)}%` : "—";
 
@@ -439,12 +441,14 @@ async function rasterImage(mode) {
   const scale = .58;
   const w = Math.max(500, Math.floor(state.mapWidth * scale)), h = Math.max(320, Math.floor(state.mapHeight * scale));
   const proj = d3.geoRobinson().precision(.2).fitExtent([[28*scale,24*scale],[w-28*scale,h-24*scale]], state.world);
-  const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext("2d"), img = ctx.createImageData(w, h), a = img.data;
+
+  // First paint the raster onto a transparent off-screen canvas.
+  const raw = document.createElement("canvas"); raw.width = w; raw.height = h;
+  const rawCtx = raw.getContext("2d"), img = rawCtx.createImageData(w, h), a = img.data;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const ll = proj.invert([x + .5, y + .5]);
-      if (!ll) continue;
+      if (!ll || !Number.isFinite(ll[0]) || !Number.isFinite(ll[1]) || Math.abs(ll[1]) > 90 || Math.abs(ll[0]) > 180) continue;
       const v = rasterSample(r, ll[0], ll[1]);
       const color = mode === "change" ? changeColor(v, ds.change_color_abs_max) : densityColor(v, ds.density_color_max);
       if (!color) continue;
@@ -452,11 +456,24 @@ async function rasterImage(mode) {
       a[i] = rr; a[i+1] = gg; a[i+2] = bb; a[i+3] = aa;
     }
   }
-  ctx.putImageData(img,0,0);
+  rawCtx.putImageData(img,0,0);
+
+  // Clip the raster exactly to the Robinson sphere. This prevents rectangular
+  // raster edges from appearing outside the curved projection boundary.
+  const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.save();
+  ctx.beginPath();
+  d3.geoPath(proj, ctx)({ type: "Sphere" });
+  ctx.clip();
+  ctx.drawImage(raw, 0, 0);
+  ctx.restore();
+
   const url = canvas.toDataURL("image/png");
   state.rasterImages[key] = url;
   return url;
 }
+
 async function renderDensity() {
   clearDataLayers();
   const mode = state.densityMode, ds = state.summary.density, n = ds.native_stats;
@@ -481,11 +498,26 @@ async function renderDensity() {
     { label: "Recent positive cells", value: fmt(n.recent.positive_cells), note: "cells with migration" },
     { label: "Maximum recent count", value: fmt(n.recent.max,1), note: "native grid" },
   ]);
-  setProfile("DENSITY SUMMARY", "Migration-track density", `<div class="profile-section"><h4>Period comparison</h4>
-    <div class="profile-row"><span>1982–2000 sum</span><b>${compact(n.early.sum)}</b></div>
-    <div class="profile-row"><span>2001–2019 sum</span><b>${compact(n.recent.sum)}</b></div>
-    <div class="profile-row"><span>Recent maximum</span><b>${fmt(n.recent.max,1)}</b></div>
-    <div class="profile-row"><span>Display resolution</span><b>${fmt(ds.display_resolution_deg,3)}°</b></div></div>`);
+  const selectedStats = mode === "early" ? n.early : mode === "recent" ? n.recent : n.change;
+  const periodLabel = mode === "early" ? "1982–2000" : mode === "recent" ? "2001–2019" : "Recent − early";
+  const sumChange = n.early.sum ? ((n.recent.sum - n.early.sum) / n.early.sum) * 100 : null;
+  setProfile("DENSITY SUMMARY", `Migration density — ${periodLabel}`, `
+    <div class="profile-hero"><span>${mode === "change" ? "Net change sum" : "Cumulative track-count sum"}</span><strong>${compact(selectedStats.sum)}</strong><span class="class-badge">${esc(periodLabel)}</span></div>
+    <div class="profile-grid">
+      <div><span>Maximum cell count</span><b>${fmt(selectedStats.max,1)}</b></div>
+      <div><span>Mean cell value</span><b>${fmt(selectedStats.mean,2)}</b></div>
+      <div><span>Positive cells</span><b>${fmt(selectedStats.positive_cells)}</b></div>
+      <div><span>Median positive</span><b>${fmt(selectedStats.median_positive,2)}</b></div>
+      <div><span>90th percentile</span><b>${fmt(selectedStats.p90_positive,1)}</b></div>
+      <div><span>95th percentile</span><b>${fmt(selectedStats.p95_positive,1)}</b></div>
+    </div>
+    <div class="profile-section"><h4>Period comparison</h4>
+      <div class="profile-row"><span>1982–2000 sum</span><b>${compact(n.early.sum)}</b></div>
+      <div class="profile-row"><span>2001–2019 sum</span><b>${compact(n.recent.sum)}</b></div>
+      <div class="profile-row"><span>Relative change</span><b>${numeric(sumChange) ? `${sumChange >= 0 ? "+" : ""}${fmt(sumChange,1)}%` : "—"}</b></div>
+      <div class="profile-row"><span>Recent / early ratio</span><b>${n.early.sum ? `${fmt(n.recent.sum / n.early.sum,2)}×` : "—"}</b></div>
+      <div class="profile-row"><span>Display resolution</span><b>${fmt(ds.display_resolution_deg,3)}°</b></div>
+    </div>`);
   drawDensityChart();
   setStatus("Density layer ready");
 }
@@ -539,10 +571,42 @@ function renderCorridors() {
     { label: "Median 50% width", value: `${fmt(median(widths),0)} km`, note: "corridor concentration" },
   ]);
   $("legend").innerHTML = `<div class="legend-title">Containment envelopes · ${state.corridorWindow.replace("-", "–")}</div><div class="legend-items"><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.18"></i>90%</span><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.38"></i>50%</span><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.72"></i>20%</span></div>`;
-  if (!state.selectedPathway) setProfile("CORRIDOR PROFILE", "Select a migration corridor", `<p class="placeholder">Click a corridor to inspect pathway rank, associated events, path length, corridor widths, direction, directional dominance, and transition probability.</p>`);
+  if (!state.selectedPathway) showCorridorOverview(paths);
   drawCorridorChart(paths);
   setStatus(`${fmt(paths.length)} pathways in ${state.corridorWindow.replace("-", "–")}`);
 }
+function showCorridorOverview(paths) {
+  const rows = paths || [];
+  const lengths = rows.map(p => num(p.data_path_length_km)).filter(numeric);
+  const w20 = rows.map(p => num(p.median_width20_km)).filter(numeric);
+  const w50 = rows.map(p => num(p.median_width50_km)).filter(numeric);
+  const w90 = rows.map(p => num(p.median_width90_km)).filter(numeric);
+  const transitions = rows.map(p => num(p.transition_probability)).filter(numeric);
+  const dominance = rows.map(p => num(p.directional_dominance)).filter(numeric);
+  const associated = rows.reduce((sum,p) => sum + (num(p.associated_events) || 0), 0);
+  const directions = new Map();
+  rows.forEach(p => { if (p.direction) directions.set(p.direction, (directions.get(p.direction)||0)+1); });
+  const dominant = [...directions.entries()].sort((a,b)=>b[1]-a[1])[0];
+  const top = [...rows].sort((a,b)=>(num(b.associated_events)||0)-(num(a.associated_events)||0))[0] || {};
+  setProfile("CORRIDOR SUMMARY", `Corridor statistics — ${state.corridorWindow.replace("-", "–")}`, `
+    <div class="profile-hero"><span>Migration pathways</span><strong>${fmt(rows.length)}</strong><span class="class-badge">${esc(state.corridorWindow.replace("-", "–"))}</span></div>
+    <div class="profile-grid">
+      <div><span>Associated events</span><b>${fmt(associated)}</b></div>
+      <div><span>Median path length</span><b>${fmt(median(lengths),0)} km</b></div>
+      <div><span>Median 20% width</span><b>${fmt(median(w20),0)} km</b></div>
+      <div><span>Median 50% width</span><b>${fmt(median(w50),0)} km</b></div>
+      <div><span>Median 90% width</span><b>${fmt(median(w90),0)} km</b></div>
+      <div><span>Dominant direction</span><b>${esc(dominant?.[0] || "—")}</b></div>
+    </div>
+    <div class="profile-section"><h4>Pathway organization</h4>
+      <div class="profile-row"><span>Median directional dominance</span><b>${pct(median(dominance))}</b></div>
+      <div class="profile-row"><span>Median transition probability</span><b>${pct(median(transitions))}</b></div>
+      <div class="profile-row"><span>Most active pathway</span><b>${esc(top.pathway_id || "—")}</b></div>
+      <div class="profile-row"><span>Events on most active pathway</span><b>${fmt(top.associated_events)}</b></div>
+    </div>
+    <p class="placeholder" style="margin-top:12px">Click any corridor on the map to replace this summary with its individual pathway profile.</p>`);
+}
+
 function showCorridorProfile(p) {
   setProfile("CORRIDOR PROFILE", p.pathway_id || "Migration corridor", `
     <div class="profile-hero"><span>Five-year window</span><strong>${esc((p.window || "—").replace("-", "–"))}</strong><span class="class-badge">Rank ${fmt(p.rank)}</span></div>
@@ -590,14 +654,17 @@ function bivarIndex(migration, exposure, mb, eb) { const x = tertile(migration, 
 function exposureFill(p, eb, mb, singleRange) {
   const v = metricValue(p); if (!numeric(v)) return "#f4f2ea";
   if (state.exposureMode === "joint") { const idx = bivarIndex(migrationValue(p), v, mb, eb); return idx === null ? "#efeee8" : BIVAR_COLORS[idx]; }
-  const lo = singleRange?.[0] ?? v, hi = singleRange?.[1] ?? v;
-  return palette(SINGLE_COLORS, (v - lo) / Math.max(hi - lo, 1e-12));
+  const tv = transformedMetric(v);
+  const lo = singleRange?.[0] ?? tv, hi = singleRange?.[1] ?? tv;
+  return palette(SINGLE_COLORS, (tv - lo) / Math.max(hi - lo, 1e-12));
 }
 function renderExposure() {
   clearDataLayers();
   if (!state.exposure) { setStatus("Exposure data unavailable", true); return; }
   const def = METRICS[state.exposureMetric], eb = exposureBreaks(), mb = migrationBreaks();
-  const singleVals = exposureFeatures().map(f => metricValue(f.properties || {})).filter(numeric), singleRange = [quantile(singleVals, .03), quantile(singleVals, .97)];
+  const singleVals = exposureFeatures().map(f => metricValue(f.properties || {})).filter(numeric);
+  const displayVals = singleVals.map(transformedMetric).filter(numeric);
+  const singleRange = [quantile(displayVals, .03), quantile(displayVals, .97)];
   setText("mapEyebrow", state.exposureMode === "joint" ? "BIVARIATE EXPOSURE" : "ADM1 EXPOSURE");
   setText("mapTitle", state.exposureMode === "joint" ? `${MIGRATION_FIELDS[state.migrationField]} × ${def.title}` : def.title);
   const g = state.dataZoom.append("g").attr("class", "data-layer");
@@ -613,19 +680,63 @@ function renderExposure() {
     .on("mouseleave", function() { d3.select(this).attr("stroke", "#737b74").attr("stroke-width", .62); tooltipHide(); })
     .on("click", (_, d) => showExposureProfile(d.properties || {}, eb, mb));
   renderExposureLegend(def); updateExposureKpis(def, eb, mb); drawExposureChart(def, mb);
-  setProfile("REGIONAL PROFILE", "Select an ADM1 region", `<p class="placeholder">Click a first-order administrative region to inspect migration burden together with cropland, pasture, population, GDP, and critical-infrastructure exposure.</p>`);
+  showExposureOverview(def, eb, mb);
   setStatus(`${fmt(exposureFeatures().length)} ADM1 regions`);
 }
+function showExposureOverview(def, eb, mb) {
+  const feats = exposureFeatures();
+  const vals = feats.map(f => metricValue(f.properties || {})).filter(numeric);
+  const migration = feats.map(f => migrationValue(f.properties || {})).filter(numeric);
+  const highHigh = feats.filter(f => bivarIndex(migrationValue(f.properties||{}), metricValue(f.properties||{}), mb, eb) === 8).length;
+  const valid = vals.length;
+  setProfile("GLOBAL EXPOSURE SUMMARY", def.title, `
+    <div class="profile-hero"><span>Valid ADM1 regions</span><strong>${fmt(valid)}</strong><span class="class-badge">${fmt(feats.length)} total regions</span></div>
+    <div class="profile-grid">
+      <div><span>Median exposure</span><b>${esc(def.format(median(vals)))}</b></div>
+      <div><span>33rd percentile</span><b>${esc(def.format(eb[0]))}</b></div>
+      <div><span>66th percentile</span><b>${esc(def.format(eb[1]))}</b></div>
+      <div><span>High–high regions</span><b>${fmt(highHigh)}</b></div>
+      <div><span>Median migration burden</span><b>${fmt(median(migration),2)}</b></div>
+      <div><span>Regions with data</span><b>${fmt(valid)}</b></div>
+    </div>
+    <div class="profile-section"><h4>Joint-class thresholds</h4>
+      <div class="profile-row"><span>Exposure 33rd / 66th</span><b>${esc(def.format(eb[0]))} / ${esc(def.format(eb[1]))}</b></div>
+      <div class="profile-row"><span>Migration 33rd / 66th</span><b>${fmt(mb[0],2)} / ${fmt(mb[1],2)}</b></div>
+    </div>
+    <p class="placeholder" style="margin-top:12px">Click an ADM1 region to replace this global summary with its regional migration–exposure profile.</p>`);
+}
+
 function renderExposureLegend(def) {
+  const vals = exposureFeatures().map(f => metricValue(f.properties || {})).filter(numeric);
+  const q33 = quantile(vals, 1/3), q66 = quantile(vals, 2/3);
   if (state.exposureMode === "single") {
-    const vals = exposureFeatures().map(f => metricValue(f.properties || {})).filter(numeric), lo = quantile(vals, .03), hi = quantile(vals, .97);
-    $("legend").innerHTML = rampLegend(def.title, "linear-gradient(90deg,#ffffe5,#fee391,#fe9929,#ec7014,#993404)", def.format(lo), def.format(hi));
+    if (state.exposureMetric === "GDP") {
+      const positive = vals.filter(v => v > 0);
+      const lo = quantile(positive, .03), hi = quantile(positive, .97);
+      const e0 = Math.ceil(Math.log10(Math.max(lo, 1)));
+      const e1 = Math.floor(Math.log10(Math.max(hi, 1)));
+      const ticks = [];
+      for (let e = e0; e <= e1; e++) ticks.push(`<span>${powerLabel(e)}</span>`);
+      $("legend").innerHTML = `<div class="legend-title">${esc(def.title)} · logarithmic scale</div>
+        <div class="ramp" style="background:linear-gradient(90deg,#ffffe5,#fee391,#fe9929,#ec7014,#993404)"></div>
+        <div class="ramp-labels log-ramp-labels">${ticks.join("")}</div>
+        <div class="threshold-note"><b>33rd:</b> ${esc(def.format(q33))} &nbsp; <b>66th:</b> ${esc(def.format(q66))}</div>`;
+    } else {
+      const lo = quantile(vals, .03), hi = quantile(vals, .97);
+      $("legend").innerHTML = `${rampLegend(def.title, "linear-gradient(90deg,#ffffe5,#fee391,#fe9929,#ec7014,#993404)", def.format(lo), def.format(hi))}
+        <div class="threshold-note"><b>33rd:</b> ${esc(def.format(q33))} &nbsp; <b>66th:</b> ${esc(def.format(q66))}</div>`;
+    }
     return;
   }
   const cells = [];
   for (let y = 2; y >= 0; y--) for (let x = 0; x < 3; x++) cells.push(`<i style="background:${BIVAR_COLORS[y*3+x]}"></i>`);
-  $("legend").innerHTML = `<div class="legend-title">${esc(def.title)} (low → high) × migration (low → high)</div><div class="bivar-legend">${cells.join("")}</div><div class="bivar-caption">33rd / 66th percentile joint classes</div>`;
+  const mb = migrationBreaks();
+  $("legend").innerHTML = `<div class="legend-title">${esc(def.title)} (low → high) × migration (low → high)</div>
+    <div class="bivar-legend">${cells.join("")}</div>
+    <div class="bivar-caption">Exact tertile thresholds</div>
+    <div class="threshold-note compact-thresholds"><b>Exposure:</b> ${esc(def.format(q33))} / ${esc(def.format(q66))}<br><b>Migration:</b> ${fmt(mb[0],2)} / ${fmt(mb[1],2)}</div>`;
 }
+
 function updateExposureKpis(def, eb, mb) {
   const feats = exposureFeatures(), vals = feats.map(f => metricValue(f.properties || {})).filter(numeric), highHigh = feats.filter(f => bivarIndex(migrationValue(f.properties||{}), metricValue(f.properties||{}), mb, eb) === 8).length, recent = feats.map(f => num(f.properties?.TRK_RECENT)).filter(numeric);
   setKpis([

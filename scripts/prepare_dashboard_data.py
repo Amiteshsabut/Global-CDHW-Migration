@@ -224,9 +224,22 @@ def check_same_grid(reference, current, year):
 def stats(arr):
     vals = arr[np.isfinite(arr)]
     if vals.size == 0:
-        return {"sum": 0.0, "mean": 0.0, "max": 0.0, "positive_cells": 0}
-    return {"sum": float(vals.sum()), "mean": float(vals.mean()), "max": float(vals.max()),
-            "positive_cells": int((vals > 0).sum())}
+        return {
+            "sum": 0.0, "mean": 0.0, "max": 0.0, "positive_cells": 0,
+            "negative_cells": 0, "median_positive": 0.0,
+            "p90_positive": 0.0, "p95_positive": 0.0
+        }
+    pos = vals[vals > 0]
+    return {
+        "sum": float(vals.sum()),
+        "mean": float(vals.mean()),
+        "max": float(vals.max()),
+        "positive_cells": int((vals > 0).sum()),
+        "negative_cells": int((vals < 0).sum()),
+        "median_positive": float(np.nanmedian(pos)) if pos.size else 0.0,
+        "p90_positive": float(np.nanpercentile(pos, 90)) if pos.size else 0.0,
+        "p95_positive": float(np.nanpercentile(pos, 95)) if pos.size else 0.0,
+    }
 
 
 def build_period_rasters(files):
@@ -327,14 +340,76 @@ def _round_coords(value, digits=5):
     return value
 
 
+def _ring_signed_area(ring):
+    """Planar signed area in lon/lat coordinates. Positive = CCW."""
+    if not ring or len(ring) < 4:
+        return 0.0
+    area = 0.0
+    for i in range(len(ring)):
+        x1, y1 = ring[i][0], ring[i][1]
+        x2, y2 = ring[(i + 1) % len(ring)][0], ring[(i + 1) % len(ring)][1]
+        area += float(x1) * float(y2) - float(x2) * float(y1)
+    return area / 2.0
+
+
+def _rewind_polygon_for_d3(poly):
+    """Normalize one GeoJSON polygon for d3-geo's spherical winding rule.
+
+    d3-geo uses clockwise exterior rings and counter-clockwise holes for
+    polygons smaller than a hemisphere. GeoJSON sources and geometry
+    simplification can leave a few tiny MultiPolygon parts with the opposite
+    winding; one such ring is interpreted as the complement of the polygon and
+    can therefore paint almost the entire Robinson globe.
+    """
+    if not poly:
+        return None
+    out = []
+    for j, ring in enumerate(poly):
+        if not ring or len(ring) < 4:
+            continue
+        ring = [list(pt) for pt in ring]
+        # Remove completely degenerate rings.
+        unique_xy = {(round(float(pt[0]), 12), round(float(pt[1]), 12)) for pt in ring if len(pt) >= 2}
+        if len(unique_xy) < 3:
+            continue
+        a = _ring_signed_area(ring)
+        if abs(a) < 1e-14:
+            continue
+        # Exterior -> clockwise (negative signed area). Hole -> CCW (positive).
+        should_reverse = (j == 0 and a > 0) or (j > 0 and a < 0)
+        if should_reverse:
+            ring.reverse()
+        out.append(ring)
+    return out if out else None
+
+
+def normalize_geometry_for_d3(geometry):
+    if not geometry:
+        return geometry
+    gtype = geometry.get("type")
+    coords = geometry.get("coordinates")
+    if gtype == "Polygon":
+        poly = _rewind_polygon_for_d3(coords)
+        return {"type": "Polygon", "coordinates": poly} if poly else None
+    if gtype == "MultiPolygon":
+        polys = []
+        for poly0 in coords or []:
+            poly = _rewind_polygon_for_d3(poly0)
+            if poly:
+                polys.append(poly)
+        return {"type": "MultiPolygon", "coordinates": polys} if polys else None
+    return geometry
+
+
 def simplify_geometry(geometry):
     if not geometry or shp_shape is None:
-        return geometry
+        return normalize_geometry_for_d3(geometry)
     try:
         geom = shp_mapping(shp_shape(geometry).simplify(EXPOSURE_SIMPLIFY_DEG, preserve_topology=True))
-        return {"type": geom["type"], "coordinates": _round_coords(geom["coordinates"])}
+        rounded = {"type": geom["type"], "coordinates": _round_coords(geom["coordinates"])}
+        return normalize_geometry_for_d3(rounded)
     except Exception:
-        return geometry
+        return normalize_geometry_for_d3(geometry)
 
 
 def population_for_geometry(src, geometry):
@@ -434,6 +509,8 @@ def prepare_exposure():
             if pop_src is not None and props.get("POP2000") is None:
                 props["POP2000"] = population_for_geometry(pop_src, source_geom)
             geom = simplify_geometry(source_geom)
+            if geom is None:
+                continue
             out_features.append({"type": "Feature", "properties": props, "geometry": geom})
     finally:
         if pop_src is not None:

@@ -176,7 +176,7 @@ input[type="range"] { width: 100%; accent-color: var(--forest); }
 .map-heading h2 { font-size: 20px; }
 .profile-card h2 { font-size: 20px; }
 .chart-card h3 { font-size: 16px; }
-#map { width: 100%; height: calc(100vh - 292px); min-height: 610px; background: #edf1ef; }
+#map { width: 100%; height: calc(100vh - 292px); min-height: 610px; background: #fffef9; }
 .status-pill {
   position: absolute; right: 12px; bottom: 12px; z-index: 700;
   padding: 6px 9px; border: 1px solid rgba(39,59,45,.18); border-radius: 8px;
@@ -257,7 +257,7 @@ input[type="range"] { width: 100%; accent-color: var(--forest); }
 .robinson-map {
   position: relative;
   overflow: hidden;
-  background: #eef1ef;
+  background: #fffef9;
 }
 #mapSvg {
   display: block;
@@ -268,7 +268,7 @@ input[type="range"] { width: 100%; accent-color: var(--forest); }
 }
 #mapSvg:active { cursor: grabbing; }
 .map-sphere {
-  fill: #dfe7e8;
+  fill: #e4ecee;
   stroke: #a8b3af;
   stroke-width: .8;
 }
@@ -343,3 +343,10 @@ input[type="range"] { width: 100%; accent-color: var(--forest); }
   font-size: 11px;
   line-height: 1.35;
 }
+
+/* Refined legends and clean Robinson boundary */
+.log-ramp-labels { gap: 12px; }
+.log-ramp-labels span { flex: 1 1 auto; text-align: center; font-variant-numeric: tabular-nums; }
+.threshold-note { margin-top: 5px; color: #5f6962; font-size: 8.5px; line-height: 1.35; text-align: right; white-space: nowrap; }
+.threshold-note b { color: #354139; font-weight: 850; }
+.compact-thresholds { white-space: normal; }
