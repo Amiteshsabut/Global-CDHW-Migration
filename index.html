@@ -5,30 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Global Compound Drought–Heatwave Migration Observatory" />
   <title>Global CDHW Migration Observatory</title>
-
+  <link rel="preconnect" href="https://unpkg.com" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark">CDHW</div>
-      <div>
+  <div class="app">
+    <header class="masthead">
+      <div class="title-lockup">
         <h1>Global Compound Drought–Heatwave Migration Observatory</h1>
-        <p>Observed migration trajectories and spatial change, 1982–2019</p>
       </div>
-    </div>
-    <button id="resetView" class="top-button">Reset global view</button>
-  </header>
+      <nav class="tab-nav" aria-label="Dashboard views">
+        <button class="main-tab active" data-tab="tracks"><b>01</b><span>Migration Tracks</span></button>
+        <button class="main-tab" data-tab="density"><b>02</b><span>Track Density</span></button>
+        <button class="main-tab" data-tab="corridors"><b>03</b><span>Five-Year Corridors</span></button>
+        <button class="main-tab" data-tab="exposure"><b>04</b><span>Exposure Hotspots</span></button>
+      </nav>
+    </header>
 
-  <main class="dashboard">
-    <aside class="sidebar">
-      <section class="panel">
-        <div class="section-heading">
-          <span>WHERE</span>
-          <small>Map extent</small>
-        </div>
-        <select id="regionSelect" class="select">
+    <section class="control-deck card">
+      <label class="control-group region-control">
+        <span class="control-label">Region</span>
+        <select id="regionSelect">
           <option value="Global">Global</option>
           <option value="North America">North America</option>
           <option value="South America">South America</option>
@@ -37,172 +35,120 @@
           <option value="Asia">Asia</option>
           <option value="Oceania">Oceania</option>
         </select>
-      </section>
+      </label>
 
-      <section class="panel">
-        <div class="section-heading">
-          <span>WHEN</span>
-          <small>Equal 19-year windows</small>
-        </div>
-        <div class="period-row">
-          <div class="period-card">
-            <b>EARLY</b>
-            <strong>1982–2000</strong>
+      <div id="trackControls" class="tab-controls">
+        <label class="control-group">
+          <span class="control-label">5-year window</span>
+          <select id="trackWindow"><option value="all">All years, 1982–2019</option></select>
+        </label>
+        <label class="control-group opacity-control">
+          <span class="control-label">Track opacity <strong id="trackOpacityValue">70%</strong></span>
+          <input id="trackOpacity" type="range" min="20" max="100" value="70" />
+        </label>
+        <label class="toggle-row"><input id="showTrackPoints" type="checkbox" /><span>Show track positions</span></label>
+      </div>
+
+      <div id="densityControls" class="tab-controls hidden">
+        <div class="control-group wide-control">
+          <span class="control-label">Density period</span>
+          <div class="segmented" id="densityMode">
+            <button data-density="early">1982–2000</button>
+            <button class="active" data-density="recent">2001–2019</button>
+            <button data-density="change">Change</button>
           </div>
-          <div class="arrow">→</div>
-          <div class="period-card">
-            <b>RECENT</b>
-            <strong>2001–2019</strong>
-          </div>
         </div>
-      </section>
-
-      <section class="panel">
-        <div class="section-heading">
-          <span>VIEW</span>
-          <small>Display mode</small>
-        </div>
-
-        <div class="view-tabs">
-          <button class="view-btn active" data-view="tracks">Tracks</button>
-          <button class="view-btn" data-view="density">Density</button>
-          <button class="view-btn" data-view="change">Change</button>
-        </div>
-
-        <div id="trackControls" class="controls-block">
-          <div class="slider-head">
-            <label for="trackOpacity">Track opacity</label>
-            <span id="trackOpacityValue">70%</span>
-          </div>
-          <input id="trackOpacity" type="range" min="15" max="100" value="70" />
-
-          <label class="check-row">
-            <input id="showTrackPoints" type="checkbox" />
-            <span>Show daily track points</span>
-          </label>
-        </div>
-
-        <div id="densityControls" class="controls-block hidden">
-          <div class="slider-head">
-            <label for="densityOpacity">Raster opacity</label>
-            <span id="densityOpacityValue">88%</span>
-          </div>
+        <label class="control-group opacity-control">
+          <span class="control-label">Raster opacity <strong id="densityOpacityValue">88%</strong></span>
           <input id="densityOpacity" type="range" min="20" max="100" value="88" />
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="section-heading">
-          <span>SUMMARY</span>
-          <small>Events and change</small>
-        </div>
-        <div class="stats-grid">
-          <div class="stat">
-            <div class="stat-kicker">1982–2000</div>
-            <div id="earlyEvents" class="stat-value">—</div>
-            <div class="stat-label">unique events</div>
-          </div>
-          <div class="stat">
-            <div class="stat-kicker">2001–2019</div>
-            <div id="recentEvents" class="stat-value">—</div>
-            <div class="stat-label">unique events</div>
-          </div>
-          <div class="stat">
-            <div class="stat-kicker">Event change</div>
-            <div id="eventChange" class="stat-value">—</div>
-            <div class="stat-label">relative change</div>
-          </div>
-          <div class="stat">
-            <div class="stat-kicker">Raster-count change</div>
-            <div id="cellChange" class="stat-value">—</div>
-            <div class="stat-label">recent vs early</div>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="section-heading">
-          <span>ANNUAL EVENTS</span>
-          <small>1982–2019</small>
-        </div>
-        <div class="chart-wrap">
-          <canvas id="annualChart"></canvas>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="section-heading">
-          <span>LAND-USE SUMMARY</span>
-          <small>Not mapped</small>
-        </div>
-        <p class="helper-text">
-          Cropland and pasture are used only to summarize migration-track burden over these land-use areas.
-        </p>
-        <div class="chart-wrap landuse-chart">
-          <canvas id="landuseChart"></canvas>
-        </div>
-        <div class="landuse-mini-grid">
-          <div>
-            <span>Recent cropland area with tracks</span>
-            <b id="cropOverlap">—</b>
-          </div>
-          <div>
-            <span>Recent pasture area with tracks</span>
-            <b id="pastureOverlap">—</b>
-          </div>
-        </div>
-      </section>
-    </aside>
-
-    <section class="map-column">
-      <div class="map-header">
-        <div>
-          <strong id="mapTitle">Migration trajectories</strong>
-          <span id="mapSubtitle">Drag the divider to compare 1982–2000 with 2001–2019.</span>
-        </div>
-        <span id="status" class="status">Loading…</span>
+        </label>
       </div>
 
-      <div id="mapShell" class="map-shell">
-        <div id="mapLeft" class="map"></div>
-        <div id="mapRight" class="map map-right"></div>
-
-        <div id="labelLeft" class="period-label left">1982–2000</div>
-        <div id="labelRight" class="period-label right">2001–2019</div>
-
-        <div id="divider" class="divider">
-          <div class="divider-handle">↔</div>
+      <div id="corridorControls" class="tab-controls hidden">
+        <label class="control-group">
+          <span class="control-label">5-year corridor window</span>
+          <select id="corridorWindow"></select>
+        </label>
+        <button id="animateCorridors" class="action-button">▶ Animate windows</button>
+        <div class="containment-key" aria-label="Corridor containment levels">
+          <span><i class="level90"></i>90%</span><span><i class="level50"></i>50%</span><span><i class="level20"></i>20%</span>
         </div>
+      </div>
 
-        <div id="yearLegend" class="legend year-legend">
-          <div class="legend-title">Track start year</div>
-          <div id="yearLegendItems"></div>
-        </div>
-
-        <div id="densityLegend" class="legend density-legend hidden">
-          <div class="legend-title" id="densityLegendTitle">Cumulative migration-track count</div>
-          <div id="densityRamp" class="density-ramp"></div>
-          <div class="legend-scale">
-            <span id="densityMin">0</span>
-            <span id="densityMax">—</span>
+      <div id="exposureControls" class="tab-controls exposure-controls hidden">
+        <div class="control-group metric-group">
+          <span class="control-label">Exposure indicator</span>
+          <div class="metric-tabs" id="metricTabs">
+            <button class="active" data-metric="CROPLAND">Cropland</button>
+            <button data-metric="PASTURE">Pasture</button>
+            <button data-metric="POP2000">Population</button>
+            <button data-metric="GDP">GDP</button>
+            <button data-metric="CISI_NORM">Critical infrastructure</button>
           </div>
         </div>
-
-        <div id="readout" class="readout">Move over map</div>
+        <div class="control-group">
+          <span class="control-label">Map mode</span>
+          <div class="segmented" id="exposureMode">
+            <button class="active" data-mode="joint">Migration × exposure</button>
+            <button data-mode="single">Exposure only</button>
+          </div>
+        </div>
+        <label class="control-group migration-measure">
+          <span class="control-label">Migration measure</span>
+          <select id="migrationField">
+            <option value="TRK_RECENT">Recent track burden</option>
+            <option value="TRK_TOTAL">Total track burden</option>
+            <option value="TRK_CHANGE">Change in track burden</option>
+            <option value="TRK_YRS">Years with migration</option>
+          </select>
+        </label>
       </div>
 
-      <div class="map-note">
-        <span id="mapNoteText">
-          Tracks are drawn directly from Daily_Summary_CDHW_Events.xlsx.
-        </span>
-      </div>
+      <button id="resetView" class="reset-button">Reset map</button>
     </section>
-  </main>
+
+    <section class="top-kpis" id="kpiRow">
+      <article class="top-kpi"><span id="kpi1Label">Total tracks</span><strong id="kpi1Value">—</strong><small id="kpi1Note">1982–2019</small></article>
+      <article class="top-kpi"><span id="kpi2Label">Early period</span><strong id="kpi2Value">—</strong><small id="kpi2Note">1982–2000</small></article>
+      <article class="top-kpi"><span id="kpi3Label">Recent period</span><strong id="kpi3Value">—</strong><small id="kpi3Note">2001–2019</small></article>
+      <article class="top-kpi"><span id="kpi4Label">Recent share</span><strong id="kpi4Value">—</strong><small id="kpi4Note">of all tracks</small></article>
+    </section>
+
+    <main class="workspace">
+      <section class="map-card card">
+        <div class="map-heading">
+          <div>
+            <span class="eyebrow" id="mapEyebrow">GLOBAL MIGRATION</span>
+            <h2 id="mapTitle">Observed CDHW Migration Tracks</h2>
+          </div>
+          <div id="legend" class="legend"></div>
+        </div>
+        <div id="map"></div>
+        <div id="status" class="status-pill">Loading data…</div>
+      </section>
+
+      <aside class="profile-column">
+        <section class="profile-card card">
+          <span class="eyebrow" id="profileEyebrow">TRACK PROFILE</span>
+          <h2 id="profileTitle">Select a migration track</h2>
+          <div id="profileBody" class="profile-body">
+            <p class="placeholder">Click a track on the map to inspect its migration characteristics.</p>
+          </div>
+        </section>
+
+        <section class="chart-card card">
+          <span class="eyebrow" id="chartEyebrow">TEMPORAL DISTRIBUTION</span>
+          <h3 id="chartTitle">Annual CDHW Migration Events</h3>
+          <div class="chart-wrap"><canvas id="sideChart"></canvas></div>
+        </section>
+      </aside>
+    </main>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/georaster"></script>
   <script src="https://unpkg.com/georaster-layer-for-leaflet"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-  <script src="assets/app-v2.js?v=20260827-1"></script>
+  <script src="assets/app.js?v=20260912-1"></script>
 </body>
 </html>
