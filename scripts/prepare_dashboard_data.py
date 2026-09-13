@@ -368,6 +368,54 @@ def _ring_signed_area(ring):
     return area / 2.0
 
 
+def _d3_ring_sum(ring):
+    """Return the signed spherical ring sum used by d3-geo.
+
+    For a small polygon exterior that d3-geo renders normally, this value is
+    positive. A negative value makes d3 interpret that ring as the spherical
+    complement (almost the whole globe). This catches tiny Arctic/Siberian
+    components where planar lon/lat winding can appear correct but d3's
+    spherical interpretation is reversed.
+    """
+    if not ring or len(ring) < 4:
+        return 0.0
+
+    rad = math.pi / 180.0
+    quarter_pi = math.pi / 4.0
+
+    lam_prev = float(ring[0][0]) * rad
+    phi0 = float(ring[0][1]) * rad / 2.0 + quarter_pi
+    cos_phi0 = math.cos(phi0)
+    sin_phi0 = math.sin(phi0)
+    total = 0.0
+
+    def step(lon, lat, lam0, cos0, sin0):
+        lam = float(lon) * rad
+        phi = float(lat) * rad / 2.0 + quarter_pi
+        dlam = lam - lam0
+        sign = 1.0 if dlam >= 0 else -1.0
+        adlam = sign * dlam
+        cos_phi = math.cos(phi)
+        sin_phi = math.sin(phi)
+        k = sin0 * sin_phi
+        u = cos0 * cos_phi + k * math.cos(adlam)
+        v = k * sign * math.sin(adlam)
+        return math.atan2(v, u), lam, cos_phi, sin_phi
+
+    for pt in ring[1:]:
+        add, lam_prev, cos_phi0, sin_phi0 = step(
+            pt[0], pt[1], lam_prev, cos_phi0, sin_phi0
+        )
+        total += add
+
+    # Explicitly close to the first vertex, matching d3-geo.
+    add, _, _, _ = step(
+        ring[0][0], ring[0][1], lam_prev, cos_phi0, sin_phi0
+    )
+    total += add
+    return total
+
+
 def _rewind_polygon_for_d3(poly):
     """Normalize one Polygon for d3-geo's spherical winding convention.
 
@@ -406,9 +454,18 @@ def _rewind_polygon_for_d3(poly):
         if abs(a) < 1e-14:
             continue
 
-        # Exterior -> clockwise (negative); holes -> CCW (positive).
-        should_reverse = (j == 0 and a > 0) or (j > 0 and a < 0)
-        if should_reverse:
+        # First normalize the ordinary planar winding.
+        should_reverse_planar = (j == 0 and a > 0) or (j > 0 and a < 0)
+        if should_reverse_planar:
+            ring.reverse()
+
+        # Then apply the actual d3-geo spherical winding test. This is the
+        # critical step for tiny high-latitude components such as one island
+        # piece inside Sakha Republic: planar winding can look correct while
+        # d3 still interprets the ring as the complement of the globe.
+        d3sum = _d3_ring_sum(ring)
+        should_reverse_spherical = (j == 0 and d3sum < 0) or (j > 0 and d3sum > 0)
+        if should_reverse_spherical:
             ring.reverse()
 
         # Re-close after reversal to guard against malformed source rings.
