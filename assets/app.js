@@ -21,8 +21,8 @@ const BIVAR_COLORS = [
 const METRICS = {
   CROPLAND: { title: "Cropland", transform: v => v * 100, format: v => numeric(v) ? `${fmt(v * 100, 1)}%` : "—" },
   PASTURE: { title: "Pasture", transform: v => v * 100, format: v => numeric(v) ? `${fmt(v * 100, 1)}%` : "—" },
-  GDP: { title: "GDP (2017 international $, PPP)", transform: v => numeric(v) && Number(v) > 0 ? Math.log10(Number(v)) : null, format: v => currencyCompact(v) },
-  CISI_NORM: { title: "Critical Infrastructure Exposure Index", transform: v => v, format: v => fmt(v, 2) },
+  GDP: { title: "GDP (2017 international $, PPP)", axisTitle: "GDP", transform: v => numeric(v) && Number(v) > 0 ? Math.log10(Number(v)) : null, format: v => currencyCompact(v) },
+  CISI_NORM: { title: "Critical Infrastructure Exposure Index", axisTitle: "CISI", transform: v => v, format: v => fmt(v, 2) },
 };
 const MIGRATION_FIELDS = {
   TRK_RECENT: "Recent track burden",
@@ -796,12 +796,11 @@ function renderExposureLegend(def) {
   }
   const cells = [];
   for (let y = 2; y >= 0; y--) for (let x = 0; x < 3; x++) cells.push(`<i style="background:${BIVAR_COLORS[y*3+x]}"></i>`);
-  const mb = migrationBreaks();
   $("legend").innerHTML = `<div class="legend-title">${esc(def.title)} × ${esc(MIGRATION_FIELDS[state.migrationField])}</div>
     <div class="bivar-axis-layout">
       <div class="bivar-y-axis">
         <span>HIGH</span>
-        <b>${esc(def.title)}</b>
+        <b>${esc(def.axisTitle || def.title)}</b>
         <span>LOW</span>
       </div>
       <div class="bivar-matrix-wrap">
@@ -812,9 +811,7 @@ function renderExposureLegend(def) {
           <span>HIGH</span>
         </div>
       </div>
-    </div>
-    <div class="bivar-caption">Exact tertile thresholds</div>
-    <div class="threshold-note compact-thresholds"><b>${esc(def.title)}:</b> ${esc(def.format(q33))} / ${esc(def.format(q66))}<br><b>Migration:</b> ${fmt(mb[0],2)} / ${fmt(mb[1],2)}</div>`;
+    </div>`;
 }
 
 function updateExposureKpis(def, eb, mb) {
