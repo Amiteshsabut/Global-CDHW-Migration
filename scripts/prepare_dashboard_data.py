@@ -224,22 +224,9 @@ def check_same_grid(reference, current, year):
 def stats(arr):
     vals = arr[np.isfinite(arr)]
     if vals.size == 0:
-        return {
-            "sum": 0.0, "mean": 0.0, "max": 0.0, "positive_cells": 0,
-            "negative_cells": 0, "median_positive": 0.0,
-            "p90_positive": 0.0, "p95_positive": 0.0
-        }
-    pos = vals[vals > 0]
-    return {
-        "sum": float(vals.sum()),
-        "mean": float(vals.mean()),
-        "max": float(vals.max()),
-        "positive_cells": int((vals > 0).sum()),
-        "negative_cells": int((vals < 0).sum()),
-        "median_positive": float(np.nanmedian(pos)) if pos.size else 0.0,
-        "p90_positive": float(np.nanpercentile(pos, 90)) if pos.size else 0.0,
-        "p95_positive": float(np.nanpercentile(pos, 95)) if pos.size else 0.0,
-    }
+        return {"sum": 0.0, "mean": 0.0, "max": 0.0, "positive_cells": 0}
+    return {"sum": float(vals.sum()), "mean": float(vals.mean()), "max": float(vals.max()),
+            "positive_cells": int((vals > 0).sum())}
 
 
 def build_period_rasters(files):
@@ -340,46 +327,96 @@ def _round_coords(value, digits=5):
     return value
 
 
+def _unwrap_ring_longitudes(ring):
+    """Return a copy of a ring with longitudes unwrapped across the dateline.
+
+    A ring that crosses +/-180 can otherwise look like a nearly world-spanning
+    polygon in simple lon/lat signed-area calculations.  Unwrapping makes the
+    winding test local and stable for Siberian / Arctic island polygons.
+    """
+    if not ring:
+        return []
+    first = list(ring[0])
+    out = [first]
+    prev = float(first[0])
+
+    for pt0 in ring[1:]:
+        pt = list(pt0)
+        lon = float(pt[0])
+        # Shift by 360-degree multiples so this vertex is closest to the
+        # previous unwrapped longitude.
+        k = round((prev - lon) / 360.0)
+        lon_u = lon + 360.0 * k
+        pt[0] = lon_u
+        out.append(pt)
+        prev = lon_u
+
+    return out
+
+
 def _ring_signed_area(ring):
-    """Planar signed area in lon/lat coordinates. Positive = CCW."""
+    """Signed lon/lat area after dateline unwrapping. Positive = CCW."""
     if not ring or len(ring) < 4:
         return 0.0
+
+    work = _unwrap_ring_longitudes(ring)
     area = 0.0
-    for i in range(len(ring)):
-        x1, y1 = ring[i][0], ring[i][1]
-        x2, y2 = ring[(i + 1) % len(ring)][0], ring[(i + 1) % len(ring)][1]
+    for i in range(len(work)):
+        x1, y1 = work[i][0], work[i][1]
+        x2, y2 = work[(i + 1) % len(work)][0], work[(i + 1) % len(work)][1]
         area += float(x1) * float(y2) - float(x2) * float(y1)
     return area / 2.0
 
 
 def _rewind_polygon_for_d3(poly):
-    """Normalize one GeoJSON polygon for d3-geo's spherical winding rule.
+    """Normalize one Polygon for d3-geo's spherical winding convention.
 
-    d3-geo uses clockwise exterior rings and counter-clockwise holes for
-    polygons smaller than a hemisphere. GeoJSON sources and geometry
-    simplification can leave a few tiny MultiPolygon parts with the opposite
-    winding; one such ring is interpreted as the complement of the polygon and
-    can therefore paint almost the entire Robinson globe.
+    d3-geo expects:
+      * exterior ring: clockwise
+      * interior holes: counter-clockwise
+
+    This is especially important for large Russian MultiPolygons such as
+    Sakha Republic (Yakutia), where one incorrectly wound island/component can
+    make d3 interpret the *whole ADM1 feature* as the complement of itself.
     """
     if not poly:
         return None
+
     out = []
-    for j, ring in enumerate(poly):
-        if not ring or len(ring) < 4:
+    for j, ring0 in enumerate(poly):
+        if not ring0 or len(ring0) < 4:
             continue
-        ring = [list(pt) for pt in ring]
-        # Remove completely degenerate rings.
-        unique_xy = {(round(float(pt[0]), 12), round(float(pt[1]), 12)) for pt in ring if len(pt) >= 2}
+
+        ring = [list(pt) for pt in ring0 if len(pt) >= 2]
+        if len(ring) < 4:
+            continue
+
+        # Make sure the ring is explicitly closed.
+        if ring[0][0] != ring[-1][0] or ring[0][1] != ring[-1][1]:
+            ring.append(list(ring[0]))
+
+        unique_xy = {
+            (round(float(pt[0]), 12), round(float(pt[1]), 12))
+            for pt in ring
+        }
         if len(unique_xy) < 3:
             continue
+
         a = _ring_signed_area(ring)
         if abs(a) < 1e-14:
             continue
-        # Exterior -> clockwise (negative signed area). Hole -> CCW (positive).
+
+        # Exterior -> clockwise (negative); holes -> CCW (positive).
         should_reverse = (j == 0 and a > 0) or (j > 0 and a < 0)
         if should_reverse:
             ring.reverse()
+
+        # Re-close after reversal to guard against malformed source rings.
+        if ring[0][0] != ring[-1][0] or ring[0][1] != ring[-1][1]:
+            ring.append(list(ring[0]))
+
         out.append(ring)
+
     return out if out else None
 
 
@@ -402,14 +439,57 @@ def normalize_geometry_for_d3(geometry):
 
 
 def simplify_geometry(geometry):
-    if not geometry or shp_shape is None:
-        return normalize_geometry_for_d3(geometry)
+    """Simplify ADM1 geometry and normalize winding both before and after.
+
+    Normalizing twice is intentional:
+      1. fixes malformed source MultiPolygon pieces before Shapely sees them;
+      2. fixes any ring orientation changed by simplify()/mapping().
+
+    This prevents valid Siberian ADM1 regions such as Sakha Republic and
+    Yamalo-Nenets Autonomous Okrug from being rejected by the browser map.
+    """
+    if not geometry:
+        return None
+
+    normalized_source = normalize_geometry_for_d3(geometry)
+    if normalized_source is None:
+        return None
+
+    if shp_shape is None:
+        return normalized_source
+
     try:
-        geom = shp_mapping(shp_shape(geometry).simplify(EXPOSURE_SIMPLIFY_DEG, preserve_topology=True))
-        rounded = {"type": geom["type"], "coordinates": _round_coords(geom["coordinates"])}
+        geom_obj = shp_shape(normalized_source)
+        if geom_obj.is_empty:
+            return None
+
+        # Repair invalid polygon topology when Shapely can do so safely.
+        if not geom_obj.is_valid:
+            try:
+                geom_obj = geom_obj.buffer(0)
+            except Exception:
+                pass
+        if geom_obj.is_empty:
+            return None
+
+        geom_obj = geom_obj.simplify(
+            EXPOSURE_SIMPLIFY_DEG,
+            preserve_topology=True,
+        )
+        geom = shp_mapping(geom_obj)
+
+        if geom.get("type") not in ("Polygon", "MultiPolygon"):
+            # Do not emit GeometryCollections into the ADM1 web layer.
+            return normalized_source
+
+        rounded = {
+            "type": geom["type"],
+            "coordinates": _round_coords(geom["coordinates"]),
+        }
         return normalize_geometry_for_d3(rounded)
+
     except Exception:
-        return normalize_geometry_for_d3(geometry)
+        return normalized_source
 
 
 def population_for_geometry(src, geometry):
@@ -492,8 +572,7 @@ def prepare_exposure():
         raise ValueError("ADM1 exposure GeoJSON must be a FeatureCollection")
 
     keep = ["shapeGroup", "shapeName", "shapeID", "shapeType", "ADM1_ID", "FOREST", "CROPLAND", "PASTURE",
-            "GDP", "CISI", "CISI_NORM", "TRK_EARLY", "TRK_RECENT", "TRK_TOTAL", "TRK_CHANGE", "TRK_MEAN", "TRK_MAX", "TRK_YRS", "POP2000"]
-    pop_src = rasterio.open(POPULATION_FILE) if POPULATION_FILE.exists() else None
+            "GDP", "CISI", "CISI_NORM", "TRK_EARLY", "TRK_RECENT", "TRK_TOTAL", "TRK_CHANGE", "TRK_MEAN", "TRK_MAX", "TRK_YRS"]
     out_features = []
     try:
         for ft in gj.get("features", []):
@@ -506,24 +585,35 @@ def prepare_exposure():
                 continue
             props = {k: props0.get(k) for k in keep if k in props0}
             source_geom = ft.get("geometry")
-            if pop_src is not None and props.get("POP2000") is None:
-                props["POP2000"] = population_for_geometry(pop_src, source_geom)
             geom = simplify_geometry(source_geom)
             if geom is None:
                 continue
+
+            # Diagnostic: these very large Russian MultiPolygons previously
+            # exposed winding problems in d3-geo. Keep them and report that
+            # they survived preprocessing.
+            if str(props.get("shapeGroup") or "").upper() == "RUS" and str(props.get("shapeName") or "") in {
+                "Sakha Republic",
+                "Yamalo-Nenets Autonomous Okrug",
+            }:
+                print(
+                    f"    geometry check OK: {props.get('shapeName')} "
+                    f"({geom.get('type')}, "
+                    f"{len(geom.get('coordinates') or [])} polygon part(s))"
+                )
+
             out_features.append({"type": "Feature", "properties": props, "geometry": geom})
     finally:
-        if pop_src is not None:
-            pop_src.close()
+        pass
 
     out = {"type": "FeatureCollection", "features": out_features}
     with (OUTPUT_DIR / "adm1_exposure.geojson").open("w", encoding="utf-8") as f:
         json.dump(out, f, separators=(",", ":"))
 
-    keys = ["CROPLAND", "PASTURE", "POP2000", "GDP", "CISI_NORM", "TRK_EARLY", "TRK_RECENT", "TRK_TOTAL", "TRK_CHANGE", "TRK_YRS"]
+    keys = ["CROPLAND", "PASTURE", "GDP", "CISI_NORM", "TRK_EARLY", "TRK_RECENT", "TRK_TOTAL", "TRK_CHANGE", "TRK_YRS"]
     metrics = {k: metric_stats(out_features, k) for k in keys}
     return {"available": True, "feature_count": len(out_features),
-            "population_available": metrics["POP2000"]["n"] > 0, "metrics": metrics}
+            "population_available": False, "metrics": metrics}
 
 
 

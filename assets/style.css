@@ -134,7 +134,7 @@ input[type="range"] { width: 100%; accent-color: var(--forest); }
 .segmented button { min-width: 104px; border: 0; border-right: 1px solid #c8cbc1; background: transparent; color: #465149; font-size: 12px; font-weight: 750; }
 .segmented button:last-child { border-right: 0; }
 .segmented button.active { color: white; background: var(--forest); }
-.metric-tabs { display: grid; grid-template-columns: repeat(5, minmax(95px, 1fr)); gap: 5px; }
+.metric-tabs { display: grid; grid-template-columns: repeat(4, minmax(105px, 1fr)); gap: 5px; }
 .metric-tabs button {
   min-height: 40px; padding: 0 9px; border: 1px solid #c8cbc1; border-radius: 8px;
   background: #f8f7f1; color: #354038; font-size: 11px; font-weight: 780;
@@ -215,9 +215,53 @@ input[type="range"] { width: 100%; accent-color: var(--forest); }
 .chart-card { min-height: 300px; }
 .chart-wrap { position: relative; height: 230px; margin-top: 10px; }
 
-.bivar-legend { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 23px); gap: 1px; width: max-content; margin-left: auto; }
+.bivar-legend { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 23px); gap: 1px; width: max-content; margin: 0; }
 .bivar-legend i { display: block; border: 1px solid rgba(50,50,45,.12); }
-.bivar-caption { margin-top: 4px; color: #667068; font-size: 8px; text-align: right; }
+.bivar-caption { margin-top: 5px; color: #667068; font-size: 8px; text-align: right; }
+
+.bivar-axis-layout {
+  display: grid;
+  grid-template-columns: 34px auto;
+  justify-content: end;
+  align-items: stretch;
+  gap: 5px;
+  margin-top: 4px;
+}
+.bivar-y-axis {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: center;
+  align-items: center;
+  min-height: 71px;
+  color: #5e6861;
+  font-size: 7px;
+  font-weight: 800;
+}
+.bivar-y-axis b {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  color: #344039;
+  font-size: 8px;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.bivar-matrix-wrap { display: grid; gap: 4px; }
+.bivar-x-axis {
+  width: 104px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 4px;
+  color: #5e6861;
+  font-size: 7px;
+  font-weight: 800;
+}
+.bivar-x-axis b {
+  color: #344039;
+  font-size: 8px;
+  text-align: center;
+  text-transform: uppercase;
+}
 
 .leaflet-container { font-family: Inter, "Segoe UI", Arial, sans-serif; }
 .leaflet-control-zoom a { color: #284734; }

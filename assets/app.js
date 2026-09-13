@@ -21,7 +21,6 @@ const BIVAR_COLORS = [
 const METRICS = {
   CROPLAND: { title: "Cropland", transform: v => v * 100, format: v => numeric(v) ? `${fmt(v * 100, 1)}%` : "—" },
   PASTURE: { title: "Pasture", transform: v => v * 100, format: v => numeric(v) ? `${fmt(v * 100, 1)}%` : "—" },
-  POP2000: { title: "Population (2000)", transform: v => v, format: v => compact(v) },
   GDP: { title: "GDP (2017 international $, PPP)", transform: v => numeric(v) && Number(v) > 0 ? Math.log10(Number(v)) : null, format: v => currencyCompact(v) },
   CISI_NORM: { title: "Critical Infrastructure Exposure Index", transform: v => v, format: v => fmt(v, 2) },
 };
@@ -131,10 +130,6 @@ async function init() {
     if (state.summary.exposure?.available && state.summary.files.exposure) state.exposure = await fetchJSON(state.summary.files.exposure);
     if (!state.summary.corridors?.available) document.querySelector('[data-tab="corridors"]').disabled = true;
     if (!state.summary.exposure?.available) document.querySelector('[data-tab="exposure"]').disabled = true;
-    if (!state.summary.exposure?.population_available) {
-      const b = document.querySelector('[data-metric="POP2000"]');
-      if (b) b.disabled = true;
-    }
     resizeMap(true);
     render();
     setStatus("Ready");
@@ -802,10 +797,24 @@ function renderExposureLegend(def) {
   const cells = [];
   for (let y = 2; y >= 0; y--) for (let x = 0; x < 3; x++) cells.push(`<i style="background:${BIVAR_COLORS[y*3+x]}"></i>`);
   const mb = migrationBreaks();
-  $("legend").innerHTML = `<div class="legend-title">${esc(def.title)} (low → high) × migration (low → high)</div>
-    <div class="bivar-legend">${cells.join("")}</div>
+  $("legend").innerHTML = `<div class="legend-title">${esc(def.title)} × ${esc(MIGRATION_FIELDS[state.migrationField])}</div>
+    <div class="bivar-axis-layout">
+      <div class="bivar-y-axis">
+        <span>HIGH</span>
+        <b>${esc(def.title)}</b>
+        <span>LOW</span>
+      </div>
+      <div class="bivar-matrix-wrap">
+        <div class="bivar-legend">${cells.join("")}</div>
+        <div class="bivar-x-axis">
+          <span>LOW</span>
+          <b>Migration burden</b>
+          <span>HIGH</span>
+        </div>
+      </div>
+    </div>
     <div class="bivar-caption">Exact tertile thresholds</div>
-    <div class="threshold-note compact-thresholds"><b>Exposure:</b> ${esc(def.format(q33))} / ${esc(def.format(q66))}<br><b>Migration:</b> ${fmt(mb[0],2)} / ${fmt(mb[1],2)}</div>`;
+    <div class="threshold-note compact-thresholds"><b>${esc(def.title)}:</b> ${esc(def.format(q33))} / ${esc(def.format(q66))}<br><b>Migration:</b> ${fmt(mb[0],2)} / ${fmt(mb[1],2)}</div>`;
 }
 
 function updateExposureKpis(def, eb, mb) {
@@ -832,7 +841,6 @@ function showExposureProfile(p, eb, mb) {
     <div class="profile-section"><h4>Exposure context</h4>
       <div class="profile-row"><span>Cropland</span><b>${METRICS.CROPLAND.format(num(p.CROPLAND))}</b></div>
       <div class="profile-row"><span>Pasture</span><b>${METRICS.PASTURE.format(num(p.PASTURE))}</b></div>
-      <div class="profile-row"><span>Population (2000)</span><b>${METRICS.POP2000.format(num(p.POP2000))}</b></div>
       <div class="profile-row"><span>GDP (2017 international $, PPP)</span><b>${METRICS.GDP.format(num(p.GDP))}</b></div>
       <div class="profile-row"><span>Critical infrastructure index</span><b>${METRICS.CISI_NORM.format(num(p.CISI_NORM))}</b></div>
     </div>`);
