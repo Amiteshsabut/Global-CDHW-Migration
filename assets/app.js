@@ -56,7 +56,7 @@ const state = {
   showTrackPoints: false,
   densityMode: "recent",
   densityOpacity: .88,
-  corridorWindow: WINDOWS[0],
+  corridorWindow: "all",
   corridorTimer: null,
   selectedPathway: null,
   exposureMetric: "CROPLAND",
@@ -114,6 +114,7 @@ function setProfile(eyebrow, title, html) {
 window.addEventListener("DOMContentLoaded", init);
 
 async function init() {
+  $("corridorWindow").insertAdjacentHTML("beforeend", '<option value="all">All years, 1982–2019</option>');
   WINDOWS.forEach(w => {
     $("trackWindow").insertAdjacentHTML("beforeend", `<option value="${w}">${w}</option>`);
     $("corridorWindow").insertAdjacentHTML("beforeend", `<option value="${w}">${w}</option>`);
@@ -577,27 +578,36 @@ function rampLegend(title, gradient, lo, hi) {
   return `<div class="legend-title">${esc(title)}</div><div class="ramp" style="background:${gradient}"></div><div class="ramp-labels"><span>${esc(lo)}</span><span>${esc(hi)}</span></div>`;
 }
 
+function corridorWindowLabel() {
+  return state.corridorWindow === "all" ? "1982–2019" : state.corridorWindow.replace("-", "–");
+}
+function corridorFeatureKey(p) {
+  return `${p?.window || ""}::${p?.pathway_id || ""}`;
+}
 function corridorPathways(windowName) {
   const seen = new Map();
   (state.corridors?.features || []).forEach(f => {
     const p = f.properties || {};
-    if (p.window === windowName && p.pathway_id && !seen.has(p.pathway_id)) seen.set(p.pathway_id, p);
+    const key = corridorFeatureKey(p);
+    if ((windowName === "all" || p.window === windowName) && p.pathway_id && !seen.has(key)) seen.set(key, p);
   });
   return [...seen.values()];
 }
 function corridorVisual(p) {
   const color = p.pathway_color || p.fill_color || "#cf6b34";
   if (p.feature_type === "guide_rail") return { stroke: "#29342d", strokeWidth: 1.4, strokeOpacity: .72, fill: "none", fillOpacity: 0, dash: "5 4" };
-  const level = Number(p.containment_level || 90), selected = state.selectedPathway && p.pathway_id === state.selectedPathway;
+  const level = Number(p.containment_level || 90), selected = state.selectedPathway && corridorFeatureKey(p) === state.selectedPathway;
   const opacity = level === 20 ? .62 : level === 50 ? .34 : .15;
   return { stroke: selected ? "#101713" : color, strokeWidth: selected ? 2.3 : .8, strokeOpacity: selected ? 1 : .92, fill: color, fillOpacity: selected ? Math.min(.78, opacity + .12) : opacity, dash: null };
 }
 function renderCorridors() {
   clearDataLayers();
   if (!state.corridors) { setStatus("Corridor data unavailable", true); return; }
-  setText("mapEyebrow", "FIVE-YEAR PATHWAYS");
-  setText("mapTitle", `CDHW Migration Corridors — ${state.corridorWindow.replace("-", "–")}`);
-  const features = state.corridors.features.filter(f => f.properties?.window === state.corridorWindow);
+  const periodLabel = corridorWindowLabel();
+  const allYears = state.corridorWindow === "all";
+  setText("mapEyebrow", allYears ? "ALL-YEAR PATHWAYS" : "FIVE-YEAR PATHWAYS");
+  setText("mapTitle", `CDHW Migration Corridors — ${periodLabel}`);
+  const features = state.corridors.features.filter(f => allYears || f.properties?.window === state.corridorWindow);
   const g = state.dataZoom.append("g").attr("class", "data-layer corridor-layer");
   g.selectAll("path").data(features).join("path")
     .attr("class", "corridor-path")
@@ -611,21 +621,21 @@ function renderCorridors() {
     .on("mouseenter", (event, d) => { const p = d.properties || {}; tooltipShow(`<b>${esc(p.pathway_id || "Pathway")}</b><br>${fmt(p.associated_events)} associated events`, event); })
     .on("mousemove", tooltipMove)
     .on("mouseleave", tooltipHide)
-    .on("click", (_, d) => { state.selectedPathway = d.properties?.pathway_id; showCorridorProfile(d.properties || {}); renderCorridors(); });
+    .on("click", (_, d) => { state.selectedPathway = corridorFeatureKey(d.properties || {}); showCorridorProfile(d.properties || {}); renderCorridors(); });
   const paths = corridorPathways(state.corridorWindow);
   const lengths = paths.map(p => num(p.data_path_length_km)).filter(numeric);
   const widths = paths.map(p => num(p.median_width50_km)).filter(numeric);
   const assoc = paths.reduce((s,p) => s + (num(p.associated_events) || 0), 0);
   setKpis([
-    { label: "Pathways", value: fmt(paths.length), note: state.corridorWindow.replace("-", "–") },
+    { label: "Pathways", value: fmt(paths.length), note: periodLabel },
     { label: "Associated events", value: fmt(assoc), note: "pathway totals" },
-    { label: "Median pathway length", value: `${fmt(median(lengths),0)} km`, note: state.corridorWindow.replace("-", "–") },
+    { label: "Median pathway length", value: `${fmt(median(lengths),0)} km`, note: periodLabel },
     { label: "Median 50% width", value: `${fmt(median(widths),0)} km`, note: "corridor concentration" },
   ]);
-  $("legend").innerHTML = `<div class="legend-title">Containment envelopes · ${state.corridorWindow.replace("-", "–")}</div><div class="legend-items"><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.18"></i>90%</span><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.38"></i>50%</span><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.72"></i>20%</span></div>`;
+  $("legend").innerHTML = `<div class="legend-title">Containment envelopes · ${periodLabel}</div><div class="legend-items"><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.18"></i>90%</span><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.38"></i>50%</span><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.72"></i>20%</span></div>`;
   if (!state.selectedPathway) showCorridorOverview(paths);
   drawCorridorChart(paths);
-  setStatus(`${fmt(paths.length)} pathways in ${state.corridorWindow.replace("-", "–")}`);
+  setStatus(`${fmt(paths.length)} pathways in ${periodLabel}`);
 }
 function showCorridorOverview(paths) {
   const rows = paths || [];
@@ -640,8 +650,9 @@ function showCorridorOverview(paths) {
   rows.forEach(p => { if (p.direction) directions.set(p.direction, (directions.get(p.direction)||0)+1); });
   const dominant = [...directions.entries()].sort((a,b)=>b[1]-a[1])[0];
   const top = [...rows].sort((a,b)=>(num(b.associated_events)||0)-(num(a.associated_events)||0))[0] || {};
-  setProfile("CORRIDOR SUMMARY", `Corridor statistics — ${state.corridorWindow.replace("-", "–")}`, `
-    <div class="profile-hero"><span>Migration pathways</span><strong>${fmt(rows.length)}</strong><span class="class-badge">${esc(state.corridorWindow.replace("-", "–"))}</span></div>
+  const periodLabel = corridorWindowLabel();
+  setProfile("CORRIDOR SUMMARY", `Corridor statistics — ${periodLabel}`, `
+    <div class="profile-hero"><span>Migration pathways</span><strong>${fmt(rows.length)}</strong><span class="class-badge">${esc(periodLabel)}</span></div>
     <div class="profile-grid">
       <div><span>Associated events</span><b>${fmt(associated)}</b></div>
       <div><span>Median path length</span><b>${fmt(median(lengths),0)} km</b></div>
@@ -858,7 +869,7 @@ function drawDensityChart() {
   state.chart = new Chart($("sideChart"), { type: "bar", data: { labels: ["1982–2000", "2001–2019"], datasets: [{ data: [n.early.sum, n.recent.sum], backgroundColor: ["#dfad69", "#9a4b31"] }] }, options: chartBaseOptions() });
 }
 function drawCorridorChart(paths) {
-  destroyChart(); setText("chartEyebrow", "PATHWAY ACTIVITY"); setText("chartTitle", `Associated Events — ${state.corridorWindow.replace("-", "–")}`);
+  destroyChart(); setText("chartEyebrow", "PATHWAY ACTIVITY"); setText("chartTitle", `Associated Events — ${corridorWindowLabel()}`);
   const rows = [...paths].sort((a,b)=>(num(b.associated_events)||0)-(num(a.associated_events)||0)).slice(0,10);
   state.chart = new Chart($("sideChart"), { type: "bar", data: { labels: rows.map(p => String(p.pathway_id||"").replace(/^.*_P/,"P")), datasets: [{ data: rows.map(p=>num(p.associated_events)||0), backgroundColor: rows.map(p=>p.pathway_color||"#cf6b34") }] }, options: chartBaseOptions() });
 }
