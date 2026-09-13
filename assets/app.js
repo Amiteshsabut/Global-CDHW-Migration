@@ -594,11 +594,21 @@ function corridorPathways(windowName) {
   return [...seen.values()];
 }
 function corridorVisual(p) {
-  const color = p.pathway_color || p.fill_color || "#cf6b34";
   if (p.feature_type === "guide_rail") return { stroke: "#29342d", strokeWidth: 1.4, strokeOpacity: .72, fill: "none", fillOpacity: 0, dash: "5 4" };
   const level = Number(p.containment_level || 90), selected = state.selectedPathway && corridorFeatureKey(p) === state.selectedPathway;
-  const opacity = level === 20 ? .62 : level === 50 ? .34 : .15;
-  return { stroke: selected ? "#101713" : color, strokeWidth: selected ? 2.3 : .8, strokeOpacity: selected ? 1 : .92, fill: color, fillOpacity: selected ? Math.min(.78, opacity + .12) : opacity, dash: null };
+  const probabilityStyle = {
+    90: { fill: "#fee8c8", opacity: .62 },
+    50: { fill: "#fdbb84", opacity: .76 },
+    20: { fill: "#d94701", opacity: .90 },
+  }[level] || { fill: "#fdbb84", opacity: .72 };
+  return {
+    stroke: selected ? "#101713" : probabilityStyle.fill,
+    strokeWidth: selected ? 2.3 : .9,
+    strokeOpacity: selected ? 1 : .96,
+    fill: probabilityStyle.fill,
+    fillOpacity: selected ? 1 : probabilityStyle.opacity,
+    dash: null,
+  };
 }
 function renderCorridors() {
   clearDataLayers();
@@ -607,7 +617,12 @@ function renderCorridors() {
   const allYears = state.corridorWindow === "all";
   setText("mapEyebrow", allYears ? "ALL-YEAR PATHWAYS" : "FIVE-YEAR PATHWAYS");
   setText("mapTitle", `CDHW Migration Corridors — ${periodLabel}`);
-  const features = state.corridors.features.filter(f => allYears || f.properties?.window === state.corridorWindow);
+  const features = state.corridors.features
+    .filter(f => allYears || f.properties?.window === state.corridorWindow)
+    .sort((a, b) => {
+      const drawOrder = p => p?.feature_type === "guide_rail" ? 3 : ({ 90: 0, 50: 1, 20: 2 }[Number(p?.containment_level)] ?? 1);
+      return drawOrder(a.properties) - drawOrder(b.properties);
+    });
   const g = state.dataZoom.append("g").attr("class", "data-layer corridor-layer");
   g.selectAll("path").data(features).join("path")
     .attr("class", "corridor-path")
@@ -618,7 +633,11 @@ function renderCorridors() {
     .attr("stroke-width", d => corridorVisual(d.properties || {}).strokeWidth)
     .attr("stroke-opacity", d => corridorVisual(d.properties || {}).strokeOpacity)
     .attr("stroke-dasharray", d => corridorVisual(d.properties || {}).dash)
-    .on("mouseenter", (event, d) => { const p = d.properties || {}; tooltipShow(`<b>${esc(p.pathway_id || "Pathway")}</b><br>${fmt(p.associated_events)} associated events`, event); })
+    .on("mouseenter", (event, d) => {
+      const p = d.properties || {};
+      const envelope = p.feature_type === "guide_rail" ? "Directional guide rail" : `${fmt(p.containment_level)}% containment envelope`;
+      tooltipShow(`<b>${esc(p.pathway_id || "Pathway")}</b><br>${esc(envelope)}<br>${fmt(p.associated_events)} associated events`, event);
+    })
     .on("mousemove", tooltipMove)
     .on("mouseleave", tooltipHide)
     .on("click", (_, d) => { state.selectedPathway = corridorFeatureKey(d.properties || {}); showCorridorProfile(d.properties || {}); renderCorridors(); });
@@ -632,7 +651,7 @@ function renderCorridors() {
     { label: "Median pathway length", value: `${fmt(median(lengths),0)} km`, note: periodLabel },
     { label: "Median 50% width", value: `${fmt(median(widths),0)} km`, note: "corridor concentration" },
   ]);
-  $("legend").innerHTML = `<div class="legend-title">Containment envelopes · ${periodLabel}</div><div class="legend-items"><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.18"></i>90%</span><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.38"></i>50%</span><span class="legend-item"><i style="height:10px;background:#cf6b34;opacity:.72"></i>20%</span></div>`;
+  $("legend").innerHTML = `<div class="legend-title">Containment envelopes · ${periodLabel}</div><div class="legend-items"><span class="legend-item"><i style="height:10px;background:#fee8c8"></i>90%</span><span class="legend-item"><i style="height:10px;background:#fdbb84"></i>50%</span><span class="legend-item"><i style="height:10px;background:#d94701"></i>20%</span></div>`;
   if (!state.selectedPathway) showCorridorOverview(paths);
   drawCorridorChart(paths);
   setStatus(`${fmt(paths.length)} pathways in ${periodLabel}`);
